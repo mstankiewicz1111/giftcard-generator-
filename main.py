@@ -1,3 +1,6 @@
+from database.models import Base
+from database.session import engine, SessionLocal
+from database import crud
 from fastapi import FastAPI, Request
 import logging
 
@@ -15,6 +18,10 @@ SIZE_TO_VALUE = {
     "200 zł": 200,
     "300 zł": 300,
 }
+@app.on_event("startup")
+def on_startup():
+    # Utworzy tabelę gift_codes, jeśli jeszcze nie istnieje
+    Base.metadata.create_all(bind=engine)
 
 @app.get("/")
 def root():
@@ -90,7 +97,7 @@ async def webhook_order(request: Request):
                 "value": value,
             })
 
-    if not gift_lines:
+        if not gift_lines:
         logger.info(
             "Opłacone zamówienie %s nie zawiera kart podarunkowych – ignoruję.",
             order_id
@@ -100,15 +107,47 @@ async def webhook_order(request: Request):
     logger.info("Zamówienie %s zawiera karty: %s", order_id, gift_lines)
 
     # --------------------------------------
-    # 3. W TYM MIEJSCU: dalsza logika
+    # 3. Pobranie kodów z puli
     # --------------------------------------
-    # - pobranie kodów z puli (wg value)
-    # - generowanie PDF
-    # - wysyłka maila do client_email
-    # - dopisanie kodów do zamówienia przez API Idosell
+    db = SessionLocal()
+    assigned_codes = []
+
+    try:
+        for line in gift_lines:
+            qty = line["quantity"]
+            value = line["value"]
+
+            for _ in range(qty):
+                code_obj = crud.get_free_code(db, value)
+
+                if not code_obj:
+                    logger.error(
+                        "Brak wolnych kodów dla wartości %s zł (zamówienie %s)",
+                        value, order_id
+                    )
+                    continue
+
+                used = crud.mark_code_used(db, code_obj, order_id)
+                assigned_codes.append({
+                    "code": used.code,
+                    "value": used.value,
+                })
+    finally:
+        db.close()
+
+    logger.info(
+        "Przypisane kody dla zamówienia %s: %s",
+        order_id, assigned_codes
+    )
+
+    # TU później:
+    # - generowanie PDF dla każdego kodu
+    # - wysłanie maila do client_email
+    # - dopisanie kodów do zamówienia w Idosell
 
     return {
-        "status": "giftcards_detected",
+        "status": "giftcards_assigned",
         "orderId": order_id,
-        "giftLines": gift_lines
+        "giftLines": gift_lines,
+        "assignedCodes": assigned_codes,
     }
