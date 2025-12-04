@@ -58,7 +58,7 @@ def generate_giftcard_pdf(code: str, value: int) -> bytes:
     value_y = height * 0.250
 
     # było: width * 0.55 -> przesuwamy LEKKO w lewo
-    value_x = width * 0.50
+    value_x = width * 0.47
 
     # była: height * 0.175 -> minimalnie w dół
     code_y = height * 0.120
