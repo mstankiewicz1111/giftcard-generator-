@@ -3,59 +3,49 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from PyPDF2 import PdfReader, PdfWriter
 
-# Nazwa pliku szablonu, który jest w repo (w katalogu głównym)
 TEMPLATE_PATH = "GIFTCARD.pdf"
 
 
 def generate_giftcard_pdf(code: str, value: int) -> bytes:
     """
     Generuje PDF karty podarunkowej na podstawie szablonu GIFTCARD.pdf.
-    Na pierwszej stronie nakłada:
-      - kod karty
-      - wartość nominalną (np. 100 zł)
-    Zwraca bajty pliku PDF.
     """
 
-    # 1. Otwieramy szablon i NIE zamykamy go, dopóki nie skończymy merge'owania.
-    with open(TEMPLATE_PATH, "rb") as template_file:
-        base_reader = PdfReader(template_file)
-        base_page = base_reader.pages[0]
+    # --- 1. Wczytujemy CAŁY szablon do pamięci ---
+    with open(TEMPLATE_PATH, "rb") as f:
+        template_bytes = f.read()
 
-        # 2. Tworzymy nakładkę (overlay) z tekstem
-        packet = io.BytesIO()
+    template_stream = io.BytesIO(template_bytes)
+    base_reader = PdfReader(template_stream)
+    base_page = base_reader.pages[0]
 
-        # A4 w reportlab to (595.27, 841.89) – ale ważne jest tylko,
-        # że używamy tego samego formatu co szablon.
-        c = canvas.Canvas(packet, pagesize=A4)
+    # --- 2. Tworzymy nakładkę ---
+    packet = io.BytesIO()
+    c = canvas.Canvas(packet, pagesize=A4)
 
-        # TODO: dostosuj współrzędne po pierwszym podglądzie
-        # (później po prostu przesuniemy X/Y, jeśli będzie trzeba)
-        CODE_X, CODE_Y = 300, 320   # pozycja kodu
-        VALUE_X, VALUE_Y = 300, 280  # pozycja wartości
+    # Pozycje tekstu (potem dostroimy)
+    CODE_X, CODE_Y = 300, 320
+    VALUE_X, VALUE_Y = 300, 280
 
-        # Kod karty
-        c.setFont("Helvetica-Bold", 18)
-        c.drawString(CODE_X, CODE_Y, code)
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(CODE_X, CODE_Y, code)
 
-        # Wartość karty (np. "300 zł")
-        c.setFont("Helvetica-Bold", 22)
-        c.drawString(VALUE_X, VALUE_Y, f"{value} zł")
+    c.setFont("Helvetica-Bold", 22)
+    c.drawString(VALUE_X, VALUE_Y, f"{value} zł")
 
-        c.save()
+    c.save()
+    packet.seek(0)
 
-        # 3. Przewijamy bufor z overlayem na początek i wczytujemy jako PDF
-        packet.seek(0)
-        overlay_reader = PdfReader(packet)
-        overlay_page = overlay_reader.pages[0]
+    overlay_reader = PdfReader(packet)
+    overlay_page = overlay_reader.pages[0]
 
-        # 4. Łączymy pierwszą stronę szablonu z pierwszą stroną nakładki
-        base_page.merge_page(overlay_page)
+    # --- 3. Łączymy PDF w pamięci ---
+    base_page.merge_page(overlay_page)
 
-        # 5. Zapisujemy wynik do nowego PDF-a w pamięci
-        writer = PdfWriter()
-        writer.add_page(base_page)
+    writer = PdfWriter()
+    writer.add_page(base_page)
 
-        output_buffer = io.BytesIO()
-        writer.write(output_buffer)
+    output = io.BytesIO()
+    writer.write(output)
 
-        return output_buffer.getvalue()
+    return output.getvalue()
