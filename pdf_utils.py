@@ -4,7 +4,7 @@ from typing import Union
 from reportlab.pdfgen import canvas
 from PyPDF2 import PdfReader, PdfWriter
 
-TEMPLATE_PATH = "templates/WASSYL-GIFTCARD.pdf"
+TEMPLATE_PATH = "WASSYL-GIFTCARD.pdf"
 
 
 def generate_giftcard_pdf(code: str, value: int, output_path: Union[str, None] = None) -> bytes:
