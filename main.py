@@ -10,7 +10,8 @@ from database.session import engine, SessionLocal
 from database import crud
 
 from pdf_utils import generate_giftcard_pdf  # import generatora PDF
-
+from fastapi.responses import StreamingResponse
+import io
 app = FastAPI()
 
 logging.basicConfig(level=logging.INFO)
@@ -45,6 +46,21 @@ def list_tables():
     inspector = inspect(engine)
     return inspector.get_table_names()
 
+@app.get("/debug/test-pdf")
+def debug_test_pdf():
+    # przykładowe dane
+    test_code = "TEST-1234-ABCD"
+    test_value = 300
+
+    pdf_bytes = generate_giftcard_pdf(code=test_code, value=test_value)
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'attachment; filename="giftcard-test.pdf"'
+        },
+    )
 
 @app.post("/webhook/order")
 async def webhook_order(request: Request):
@@ -217,3 +233,4 @@ def add_pools(req: AddPoolsRequest):
         db.close()
 
     return {"status": "ok", "total_added": total_added, "details": details}
+
