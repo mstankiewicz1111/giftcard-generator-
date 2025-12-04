@@ -1,60 +1,61 @@
 import io
-from typing import Union
-
 from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
 from PyPDF2 import PdfReader, PdfWriter
 
+# Nazwa pliku szablonu, który jest w repo (w katalogu głównym)
 TEMPLATE_PATH = "GIFTCARD.pdf"
 
 
-def generate_giftcard_pdf(code: str, value: int, output_path: Union[str, None] = None) -> bytes:
+def generate_giftcard_pdf(code: str, value: int) -> bytes:
     """
-    Tworzy PDF z kartą podarunkową na bazie szablonu GIFTCARD.pdf.
-    Zwraca bajty PDF (do wysyłki mailem), opcjonalnie zapisuje na dysk jeśli podasz output_path.
+    Generuje PDF karty podarunkowej na podstawie szablonu GIFTCARD.pdf.
+    Na pierwszej stronie nakłada:
+      - kod karty
+      - wartość nominalną (np. 100 zł)
+    Zwraca bajty pliku PDF.
     """
 
-    # 1. Wczytujemy szablon, żeby znać rozmiar strony
-    with open(TEMPLATE_PATH, "rb") as f:
-        template_reader = PdfReader(f)
-        base_page = template_reader.pages[0]
-        width = float(base_page.mediabox.width)
-        height = float(base_page.mediabox.height)
+    # 1. Otwieramy szablon i NIE zamykamy go, dopóki nie skończymy merge'owania.
+    with open(TEMPLATE_PATH, "rb") as template_file:
+        base_reader = PdfReader(template_file)
+        base_page = base_reader.pages[0]
 
-    # 2. Tworzymy "nakładkę" z tekstem (wartość + kod)
-    packet = io.BytesIO()
-    c = canvas.Canvas(packet, pagesize=(width, height))
+        # 2. Tworzymy nakładkę (overlay) z tekstem
+        packet = io.BytesIO()
 
-    # Ustal pozycje tekstów (punkty od lewej/dół).
-    # Te wartości możesz później delikatnie doregulować "na oko".
-    # Startowo przyjmijmy coś, co dobrze wygląda na tym layoucie:
-    value_text = f"{value} zł"
+        # A4 w reportlab to (595.27, 841.89) – ale ważne jest tylko,
+        # że używamy tego samego formatu co szablon.
+        c = canvas.Canvas(packet, pagesize=A4)
 
-    c.setFont("Helvetica-Bold", 14)
-    # wartość – prawa strona białego prostokąta
-    c.drawRightString(width - 20, 55, value_text)
+        # TODO: dostosuj współrzędne po pierwszym podglądzie
+        # (później po prostu przesuniemy X/Y, jeśli będzie trzeba)
+        CODE_X, CODE_Y = 300, 320   # pozycja kodu
+        VALUE_X, VALUE_Y = 300, 280  # pozycja wartości
 
-    # numer karty – pod wartością
-    c.setFont("Helvetica-Bold", 14)
-    c.drawRightString(width - 20, 35, code)
+        # Kod karty
+        c.setFont("Helvetica-Bold", 18)
+        c.drawString(CODE_X, CODE_Y, code)
 
-    c.save()
-    packet.seek(0)
+        # Wartość karty (np. "300 zł")
+        c.setFont("Helvetica-Bold", 22)
+        c.drawString(VALUE_X, VALUE_Y, f"{value} zł")
 
-    overlay_reader = PdfReader(packet)
+        c.save()
 
-    # 3. Łączymy szablon z nakładką
-    base_page.merge_page(overlay_reader.pages[0])
+        # 3. Przewijamy bufor z overlayem na początek i wczytujemy jako PDF
+        packet.seek(0)
+        overlay_reader = PdfReader(packet)
+        overlay_page = overlay_reader.pages[0]
 
-    writer = PdfWriter()
-    writer.add_page(base_page)
+        # 4. Łączymy pierwszą stronę szablonu z pierwszą stroną nakładki
+        base_page.merge_page(overlay_page)
 
-    output_bytes = io.BytesIO()
-    writer.write(output_bytes)
-    pdf_data = output_bytes.getvalue()
+        # 5. Zapisujemy wynik do nowego PDF-a w pamięci
+        writer = PdfWriter()
+        writer.add_page(base_page)
 
-    # opcjonalnie zapis na dysk (przydatne do debugowania lokalnie)
-    if output_path:
-        with open(output_path, "wb") as f_out:
-            f_out.write(pdf_data)
+        output_buffer = io.BytesIO()
+        writer.write(output_buffer)
 
-    return pdf_data
+        return output_buffer.getvalue()
