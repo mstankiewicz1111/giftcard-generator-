@@ -4,3 +4,4 @@ sqlalchemy
 psycopg2-binary
 PyPDF2
 reportlab
+requests
