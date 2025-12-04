@@ -55,7 +55,7 @@ def generate_giftcard_pdf(code: str, value: int) -> bytes:
     # --- POZYCJE TEKSTU (lewy dół to 0,0) ---
 
     # była: height * 0.235 -> podnosimy lekko
-    value_y = height * 0.250
+    value_y = height * 0.255
 
     # było: width * 0.55 -> przesuwamy LEKKO w lewo
     value_x = width * 0.47
