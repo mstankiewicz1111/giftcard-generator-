@@ -1,17 +1,24 @@
 import io
 from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import A4
 from PyPDF2 import PdfReader, PdfWriter
 
 TEMPLATE_PATH = "GIFTCARD.pdf"
+
+# Rozmiar strony Twojej karty (odczytany z PDF)
+TEMPLATE_WIDTH = 240.75
+TEMPLATE_HEIGHT = 161.04
 
 
 def generate_giftcard_pdf(code: str, value: int) -> bytes:
     """
     Generuje PDF karty podarunkowej na podstawie szablonu GIFTCARD.pdf.
+    Na pierwszej stronie:
+      - pozostawia grafikę szablonu,
+      - dokłada kod i wartość karty na środku.
+    Zwraca bajty gotowego PDF-a.
     """
 
-    # --- 1. Wczytujemy CAŁY szablon do pamięci ---
+    # 1. Wczytujemy szablon do pamięci (bez zostawiania otwartego pliku)
     with open(TEMPLATE_PATH, "rb") as f:
         template_bytes = f.read()
 
@@ -19,19 +26,24 @@ def generate_giftcard_pdf(code: str, value: int) -> bytes:
     base_reader = PdfReader(template_stream)
     base_page = base_reader.pages[0]
 
-    # --- 2. Tworzymy nakładkę ---
+    # 2. Tworzymy nakładkę o takim samym rozmiarze jak karta
     packet = io.BytesIO()
-    c = canvas.Canvas(packet, pagesize=A4)
+    c = canvas.Canvas(packet, pagesize=(TEMPLATE_WIDTH, TEMPLATE_HEIGHT))
 
-    # Pozycje tekstu (potem dostroimy)
-    CODE_X, CODE_Y = 300, 320
-    VALUE_X, VALUE_Y = 300, 280
+    center_x = TEMPLATE_WIDTH / 2
 
-    c.setFont("Helvetica-Bold", 18)
-    c.drawString(CODE_X, CODE_Y, code)
+    # Współrzędne dobrane „na oko” – tekst mniej więcej w środku.
+    # Potem można je lekko skorygować po obejrzeniu pierwszego podglądu.
+    CODE_Y = 90   # wyżej
+    VALUE_Y = 60  # niżej
 
-    c.setFont("Helvetica-Bold", 22)
-    c.drawString(VALUE_X, VALUE_Y, f"{value} zł")
+    # Kod karty (np. ABCD-1234-XYZ)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawCentredString(center_x, CODE_Y, code)
+
+    # Wartość karty (np. "300 zł")
+    c.setFont("Helvetica-Bold", 14)
+    c.drawCentredString(center_x, VALUE_Y, f"{value} zł")
 
     c.save()
     packet.seek(0)
@@ -39,9 +51,10 @@ def generate_giftcard_pdf(code: str, value: int) -> bytes:
     overlay_reader = PdfReader(packet)
     overlay_page = overlay_reader.pages[0]
 
-    # --- 3. Łączymy PDF w pamięci ---
+    # 3. Łączymy zawartość strony szablonu z nakładką
     base_page.merge_page(overlay_page)
 
+    # 4. Zapisujemy wynik do nowego PDF-a
     writer = PdfWriter()
     writer.add_page(base_page)
 
