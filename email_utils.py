@@ -1,125 +1,97 @@
 import os
-import smtplib
-import ssl
-import logging
-from typing import List, Tuple, Optional
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
+import base64
+import requests
 
-logger = logging.getLogger("giftcard-email")
-
-# Typ: lista załączników: (nazwa_pliku, bajty)
-AttachmentList = Optional[List[Tuple[str, bytes]]]
-
-
-def _get_smtp_config():
-    """Pobiera konfigurację SMTP ze zmiennych środowiskowych."""
-    host = os.getenv("SMTP_HOST")
-    port = os.getenv("SMTP_PORT")
-    user = os.getenv("SMTP_USER")
-    password = os.getenv("SMTP_PASSWORD")
-    sender = os.getenv("SMTP_SENDER")
-
-    if not all([host, port, user, password, sender]):
-        missing = [
-            name
-            for name, value in [
-                ("SMTP_HOST", host),
-                ("SMTP_PORT", port),
-                ("SMTP_USER", user),
-                ("SMTP_PASSWORD", password),
-                ("SMTP_SENDER", sender),
-            ]
-            if not value
-        ]
-        msg = f"Brak wymaganych zmiennych SMTP: {', '.join(missing)}"
-        logger.error(msg)
-        raise RuntimeError(msg)
-
-    try:
-        port_int = int(port)
-    except ValueError:
-        raise RuntimeError(f"SMTP_PORT musi być liczbą, aktualnie: {port!r}")
-
-    return host, port_int, user, password, sender
+# Nadawca – bierzemy z env, jak dotąd
+EMAIL_SENDER = os.getenv("SMTP_SENDER", "vouchery@wassyl.pl")
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 
 
 def send_email(
     to_email: str,
     subject: str,
     body_text: str,
-    attachments: AttachmentList = None,
-) -> None:
+    attachments=None,  # lista (filename, bytes)
+):
     """
-    Wysyła prostego maila tekstowego z opcjonalnymi załącznikami.
+    Wysyłka maila przez SendGrid API.
+    attachments: lista krotek (filename, file_bytes) – np. PDF-y z kartą.
     """
-    host, port, user, password, sender = _get_smtp_config()
+    if not SENDGRID_API_KEY:
+        raise RuntimeError("Brak SENDGRID_API_KEY w zmiennych środowiskowych")
 
-    msg = MIMEMultipart()
-    msg["From"] = sender
-    msg["To"] = to_email
-    msg["Subject"] = subject
+    data = {
+        "personalizations": [
+            {
+                "to": [{"email": to_email}],
+            }
+        ],
+        "from": {"email": EMAIL_SENDER},
+        "subject": subject,
+        "content": [
+            {
+                "type": "text/plain",
+                "value": body_text,
+            }
+        ],
+    }
 
-    # Treść w UTF-8, żeby np. 'ł' działało
-    msg.attach(MIMEText(body_text, "plain", "utf-8"))
-
-    # Załączniki
     if attachments:
+        data["attachments"] = []
         for filename, file_bytes in attachments:
-            part = MIMEBase("application", "octet-stream")
-            part.set_payload(file_bytes)
-            encoders.encode_base64(part)
-            part.add_header(
-                "Content-Disposition",
-                f'attachment; filename="{filename}"',
+            data["attachments"].append(
+                {
+                    "content": base64.b64encode(file_bytes).decode("ascii"),
+                    "filename": filename,
+                    "type": "application/pdf",
+                }
             )
-            msg.attach(part)
 
-    context = ssl.create_default_context()
-
-    logger.info("Łączenie z serwerem SMTP %s:%s jako %s", host, port, user)
-    with smtplib.SMTP_SSL(host, port, context=context) as server:
-        server.login(user, password)
-        server.sendmail(sender, [to_email], msg.as_string())
-    logger.info("Wysłano e-mail do %s", to_email)
+    resp = requests.post(
+        "https://api.sendgrid.com/v3/mail/send",
+        json=data,
+        headers={"Authorization": f"Bearer {SENDGRID_API_KEY}"},
+        timeout=10,
+    )
+    resp.raise_for_status()
 
 
 def send_giftcard_email(
     to_email: str,
     order_id: str,
-    codes: List[dict],
-    pdf_files: AttachmentList,
-) -> None:
+    codes,
+    pdf_files,
+):
     """
-    Wysyła maila z kartami podarunkowymi (PDF-y w załączniku).
-    `codes` – lista słowników np. {"code": "...", "value": 300}
+    Wysyłka właściwego maila z kartami podarunkowymi + PDF-y w załączniku.
+    codes: lista słowników {"code": "...", "value": 300}
+    pdf_files: lista (filename, bytes)
     """
-    subject = f"Wassyl – Twoja karta podarunkowa (zamówienie {order_id})"
-
-    # Prosta treść maila z wypisanymi kodami
     lines = [
-        "Dziękujemy za zakup karty podarunkowej WASSYL!",
+        "Dzień dobry,",
         "",
-        "Poniżej znajdują się kody kart podarunkowych:",
+        "Dziękujemy za zakup karty podarunkowej WASSYL.",
+        "",
+        "Poniżej znajdują się dane kart:",
+        "",
     ]
     for c in codes:
-        lines.append(f"- {c['value']} zł : {c['code']}")
-
-    lines += [
-        "",
-        "W załączniku znajdziesz pliki PDF z kartami.",
-        "",
-        "Pozdrawiamy,",
-        "Zespół WASSYL",
-    ]
+        lines.append(f"- {c['value']} zł, kod: {c['code']}")
+    lines.extend(
+        [
+            "",
+            "W załącznikach znajdziesz pliki PDF z kartami.",
+            "",
+            "Pozdrawiamy,",
+            "Zespół WASSYL",
+        ]
+    )
 
     body_text = "\n".join(lines)
 
     send_email(
         to_email=to_email,
-        subject=subject,
+        subject=f"Karta podarunkowa WASSYL – zamówienie {order_id}",
         body_text=body_text,
         attachments=pdf_files,
     )
