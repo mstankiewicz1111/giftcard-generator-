@@ -3,7 +3,7 @@ import base64
 import requests
 
 # Nadawca – bierzemy z env, jak dotąd
-EMAIL_SENDER = os.getenv("SMTP_SENDER", "vouchery@wassyl.pl")
+EMAIL_SENDER = os.getenv("SMTP_SENDER", "kontakt@wowpr.pl")
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 
 
