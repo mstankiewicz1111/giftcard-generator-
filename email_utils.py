@@ -95,3 +95,11 @@ def send_giftcard_email(
         body_text=body_text,
         attachments=pdf_files,
     )
+    resp = requests.post(
+        "https://api.sendgrid.com/v3/mail/send",
+        json=data,
+        headers={"Authorization": f"Bearer {SENDGRID_API_KEY}"},
+        timeout=10,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f"SendGrid error {resp.status_code}: {resp.text}")
