@@ -1,32 +1,54 @@
 import os
+import logging
 import base64
 import requests
+from typing import List, Tuple, Dict
 
-# Nadawca – bierzemy z env albo default
-EMAIL_SENDER = os.getenv("SMTP_SENDER", "vouchery@wassyl.pl")
+logger = logging.getLogger("giftcard-webhook")
+
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+SENDGRID_FROM_EMAIL = os.getenv("SENDGRID_FROM_EMAIL", "kontakt@wowpr.pl")
+SENDGRID_FROM_NAME = os.getenv("SENDGRID_FROM_NAME", "Wassyl")
+
+SENDGRID_API_URL = "https://api.sendgrid.com/v3/mail/send"
+
+
+def _build_attachments(attachments: List[Tuple[str, bytes]]):
+    """
+    attachments: lista (filename, bytes)
+    """
+    result = []
+    for filename, content in attachments:
+        result.append({
+            "content": base64.b64encode(content).decode("ascii"),
+            "type": "application/pdf",
+            "filename": filename,
+            "disposition": "attachment",
+        })
+    return result
 
 
 def send_email(
     to_email: str,
     subject: str,
     body_text: str,
-    attachments=None,  # lista (filename, bytes)
+    attachments: List[Tuple[str, bytes]] | None = None,
 ):
     """
-    Wysyłka maila przez SendGrid API.
-    attachments: lista krotek (filename, file_bytes) – np. PDF-y z kartą.
+    Ogólna funkcja do wysyłki maila przez SendGrid.
+    attachments – lista (filename, bytes) lub None.
     """
     if not SENDGRID_API_KEY:
         raise RuntimeError("Brak SENDGRID_API_KEY w zmiennych środowiskowych")
 
-    data = {
+    data: Dict = {
         "personalizations": [
-            {
-                "to": [{"email": to_email}],
-            }
+            {"to": [{"email": to_email}]}
         ],
-        "from": {"email": EMAIL_SENDER},
+        "from": {
+            "email": SENDGRID_FROM_EMAIL,
+            "name": SENDGRID_FROM_NAME,
+        },
         "subject": subject,
         "content": [
             {
@@ -37,66 +59,51 @@ def send_email(
     }
 
     if attachments:
-        data["attachments"] = []
-        for filename, file_bytes in attachments:
-            data["attachments"].append(
-                {
-                    "content": base64.b64encode(file_bytes).decode("ascii"),
-                    "filename": filename,
-                    "type": "application/pdf",
-                }
-            )
+        data["attachments"] = _build_attachments(attachments)
 
-    # Jedyny request do SendGrid
-    resp = requests.post(
-        "https://api.sendgrid.com/v3/mail/send",
-        json=data,
-        headers={"Authorization": f"Bearer {SENDGRID_API_KEY}"},
-        timeout=10,
-    )
+    headers = {
+        "Authorization": f"Bearer {SENDGRID_API_KEY}",
+        "Content-Type": "application/json",
+    }
 
-    if resp.status_code >= 400:
-        raise RuntimeError(f"SendGrid error {resp.status_code}: {resp.text}")
+    resp = requests.post(SENDGRID_API_URL, json=data, headers=headers, timeout=10)
+    try:
+        resp.raise_for_status()
+    except Exception as e:
+        logger.error("Błąd przy wysyłce maila SendGrid: %s, response=%s", e, resp.text)
+        raise
+
+    logger.info("Wysłano e-mail na %s (SendGrid)", to_email)
 
 
 def send_giftcard_email(
     to_email: str,
     order_id: str,
-    codes,
-    pdf_files,
+    codes: List[Dict[str, str]],
+    pdf_files: List[Tuple[str, bytes]],
 ):
     """
-    Wysyłka właściwego maila z kartami podarunkowymi + PDF-y w załączniku.
-    codes: lista słowników {"code": "...", "value": 300}
+    Wysyła maila z kartami podarunkowymi w załącznikach.
     pdf_files: lista (filename, bytes)
     """
+    subject = f"Twoja karta podarunkowa – zamówienie {order_id}"
+
     lines = [
-        "Dzień dobry,",
+        "Dziękujemy za zakup karty podarunkowej w sklepie Wassyl!",
         "",
-        "Dziękujemy za zakup karty podarunkowej WASSYL.",
+        "W załączniku znajdziesz swoje karty w formacie PDF.",
         "",
-        "Poniżej znajdują się dane kart:",
-        "",
+        "Podsumowanie kart:",
     ]
     for c in codes:
-        lines.append(f"- {c['value']} zł, kod: {c['code']}")
-
-    lines.extend(
-        [
-            "",
-            "W załącznikach znajdziesz pliki PDF z kartami.",
-            "",
-            "Pozdrawiamy,",
-            "Zespół WASSYL",
-        ]
-    )
-
+        lines.append(f"- {c['value']} zł – kod: {c['code']}")
+    lines.append("")
+    lines.append("Miłych zakupów!")
     body_text = "\n".join(lines)
 
-    # Tylko jedno wywołanie SendGrid API
     send_email(
         to_email=to_email,
-        subject=f"Karta podarunkowa WASSYL – zamówienie {order_id}",
+        subject=subject,
         body_text=body_text,
         attachments=pdf_files,
     )
