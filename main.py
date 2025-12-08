@@ -286,6 +286,7 @@ async def webhook_order(request: Request):
             send_giftcard_email(
                 to_email=client_email,
                 order_id=order_id,
+                order_serial=str(order_serial),
                 codes=assigned_codes,
                 pdf_files=pdf_files,
             )
@@ -339,3 +340,4 @@ async def debug_test_email(to: str = Query(..., description="Adres odbiorcy")):
         return {"status": "ok", "message": f"Wysłano testową wiadomość na {to}"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
