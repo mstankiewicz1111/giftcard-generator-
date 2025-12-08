@@ -1,13 +1,16 @@
-from fastapi import FastAPI, Request, Query
-from fastapi.responses import Response
 import logging
 import os
 from typing import List, Dict
 
+from fastapi import FastAPI, Request, Query
+from fastapi.responses import Response
+from sqlalchemy import text
+
 from database.models import Base
 from database.session import engine, SessionLocal
 from database import crud
-from pdf_utils import generate_giftcard_pdf
+
+from pdf_utils import generate_giftcard_pdf, TEMPLATE_PATH
 from email_utils import send_giftcard_email, send_email
 from idosell_client import IdosellClient, IdosellApiError
 
@@ -318,12 +321,78 @@ async def webhook_order(request: Request):
     }
 
 
+# -------------------------------------------------
+#   Endpoint health-check
+# -------------------------------------------------
+@app.get("/health")
+def health():
+    """
+    Prosty healthcheck:
+    - status aplikacji
+    - baza danych
+    - SendGrid (API key obecny?)
+    - Idosell (env + inicjalizacja klienta)
+    - szablon PDF
+    """
+    # --- DB ---
+    db_status = "ok"
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        db_status = f"error: {e.__class__.__name__}"
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+    # --- SendGrid ---
+    sendgrid_api_key = os.getenv("SENDGRID_API_KEY")
+    sendgrid_status = "configured" if sendgrid_api_key else "missing_api_key"
+
+    # --- Idosell ---
+    idosell_domain = os.getenv("IDOSELL_DOMAIN")
+    idosell_key = os.getenv("IDOSELL_API_KEY")
+
+    idosell_env_ok = bool(idosell_domain and idosell_key)
+    idosell_client_initialized = bool(idosell_client)
+
+    idosell_status = {
+        "env_ok": idosell_env_ok,
+        "client_initialized": idosell_client_initialized,
+        "domain_present": bool(idosell_domain),
+        "api_key_present": bool(idosell_key),
+    }
+
+    # --- PDF template ---
+    pdf_template_status = "found" if os.path.exists(TEMPLATE_PATH) else "missing"
+
+    overall_ok = (
+        db_status == "ok"
+        and sendgrid_status == "configured"
+        and pdf_template_status == "found"
+    )
+
+    return {
+        "status": "ok" if overall_ok else "degraded",
+        "services": {
+            "database": db_status,
+            "sendgrid": sendgrid_status,
+            "idosell": idosell_status,
+            "pdf_template": pdf_template_status,
+        },
+    }
+
+
+# -------------------------------------------------
+#   Testowy endpoint wysyłki e-maila
+# -------------------------------------------------
 @app.get("/debug/test-email")
 async def debug_test_email(to: str = Query(..., description="Adres odbiorcy")):
     """
     Testowy endpoint wysyłki email — wysyła testową kartę w PDF jako załącznik.
     """
-    # generujemy testowy PDF z istniejącej funkcji
     pdf_bytes = generate_giftcard_pdf(code="TEST-1234-ABCD", value=300)
     attachments = [("test-giftcard.pdf", pdf_bytes)]
 
@@ -339,5 +408,5 @@ async def debug_test_email(to: str = Query(..., description="Adres odbiorcy")):
         )
         return {"status": "ok", "message": f"Wysłano testową wiadomość na {to}"}
     except Exception as e:
+        logger.exception("Błąd przy wysyłaniu testowego maila: %s", e)
         return {"status": "error", "message": str(e)}
-
