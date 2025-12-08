@@ -219,15 +219,53 @@ async def idosell_order_webhook(request: Request):
     db = SessionLocal()
     assigned_codes: List[Dict[str, Any]] = []
     try:
+        order_serial_str = str(order_serial)
+
         for pos in gift_positions:
             value = pos["value"]
-            quantity = pos["quantity"]
+            quantity = pos["quantity"]  # ile kart tego nominału wynika z koszyka
 
-            for _ in range(quantity):
+            # Ile kodów tego nominału już przypisaliśmy temu zamówieniu?
+            existing_count = db.execute(
+                text(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM gift_codes
+                    WHERE order_id = :order_id
+                      AND value = :value
+                    """
+                ),
+                {"order_id": order_serial_str, "value": value},
+            ).scalar_one()
+
+            remaining = quantity - existing_count
+
+            if remaining <= 0:
+                logger.info(
+                    "Zamówienie %s (%s): dla nominału %s zł istnieje już %s kodów (wymagane %s) – nie przydzielam nowych.",
+                    order_id,
+                    order_serial,
+                    value,
+                    existing_count,
+                    quantity,
+                )
+                continue
+
+            logger.info(
+                "Zamówienie %s (%s): dla nominału %s zł potrzebujemy jeszcze %s kod(ów) (łącznie %s, już istnieje %s).",
+                order_id,
+                order_serial,
+                value,
+                remaining,
+                quantity,
+                existing_count,
+            )
+
+            for _ in range(remaining):
                 code_obj = crud.assign_unused_gift_code(
                     db,
                     value=value,
-                    order_id=order_serial,
+                    order_id=order_serial_str,
                 )
                 if not code_obj:
                     logger.error(
@@ -246,21 +284,17 @@ async def idosell_order_webhook(request: Request):
 
         db.commit()
         logger.info(
-            "Przydzielono %s kodów dla zamówienia %s (%s).",
+            "Przydzielono %s nowych kodów dla zamówienia %s (%s).",
             len(assigned_codes),
             order_id,
             order_serial,
         )
-    except Exception:
+
+    except Exception as e:
         db.rollback()
-        logger.exception(
-            "Błąd podczas przydzielania kodów dla zamówienia %s (%s).",
-            order_id,
-            order_serial,
-        )
+        logger.exception("Błąd podczas przydzielania kodów dla zamówienia %s (%s): %s",
+                        order_id, order_serial, e)
         raise
-    finally:
-        db.close()
 
     # 4. Wysyłka e-maila z kartą/kartami
     if client_email and assigned_codes:
@@ -1235,5 +1269,6 @@ async def admin_add_codes(payload: Dict[str, Any]):
         raise HTTPException(status_code=500, detail="Błąd bazy danych")
     finally:
         db.close()
+
 
 
