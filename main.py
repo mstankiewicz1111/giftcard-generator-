@@ -1209,11 +1209,23 @@ def admin_list_codes(
 def admin_add_codes(payload: Dict[str, Any]):
     """
     Dodaje nowe kody do puli dla danego nominału.
-    payload: { "value": 100, "codes": ["ABC123", "DEF456", ...] }
+
+    payload może wyglądać tak:
+      { "value": 100, "codes": "KOD1\nKOD2\nKOD3" }  # string
+      lub
+      { "value": 100, "codes": ["KOD1", "KOD2", "KOD3"] }  # lista
     """
     value = int(payload.get("value"))
+
     codes_raw = payload.get("codes") or ""
-    codes = [c.strip() for c in codes_raw.splitlines() if c.strip()]
+
+    # Obsługa obu formatów: string i lista
+    if isinstance(codes_raw, str):
+        codes = [c.strip() for c in codes_raw.splitlines() if c.strip()]
+    elif isinstance(codes_raw, list):
+        codes = [str(c).strip() for c in codes_raw if str(c).strip()]
+    else:
+        codes = []
 
     if not codes:
         raise HTTPException(status_code=400, detail="Brak kodów do dodania")
@@ -1245,7 +1257,3 @@ def admin_add_codes(payload: Dict[str, Any]):
         raise HTTPException(status_code=500, detail="Błąd bazy danych")
     finally:
         db.close()
-
-
-
-
