@@ -855,17 +855,7 @@ textarea:focus {
       box-shadow: 0 16px 35px rgba(15, 23, 42, 0.6);
       transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
     }
-    
-    .btn-primary {
-      background: rgba(229,197,94,0.18);
-      border: 1px solid rgba(229,197,94,0.45);
-      color: rgba(255,255,255,0.95);
-    }
-    .btn-primary:hover {
-      background: rgba(229,197,94,0.26);
-      border-color: rgba(229,197,94,0.65);
-    }
-.btn:hover {
+    .btn:hover {
       transform: translateY(-1px);
       box-shadow: 0 18px 40px rgba(15, 23, 42, 0.7);
       background: #020617;
@@ -2256,4 +2246,3 @@ def admin_list_logs(
         raise HTTPException(status_code=500, detail="Błąd bazy danych")
     finally:
         db.close()
-
