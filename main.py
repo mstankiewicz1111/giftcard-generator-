@@ -958,8 +958,6 @@ textarea:focus {
     .switch input:checked + .slider { background: rgba(34,197,94,0.35); border-color: rgba(34,197,94,0.55); }
     .switch input:checked + .slider:before { transform: translateX(20px); }
     .switch-label { font-size: 13px; color: rgba(229,231,235,0.9); }
-
-\1
 </head>
 <body>
   <div class="app">
@@ -1117,9 +1115,9 @@ textarea:focus {
             </label>
 
             <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
-              <button class="btn secondary" onclick="archiveUsedCodes()">Zarchiwizuj użyte kody</button>
-              <button class="btn secondary" onclick="setArchivedMode('hide')">Pokaż aktywne</button>
-              <button class="btn secondary" onclick="setArchivedMode('only')">Pokaż zarchiwizowane</button>
+              <button class="btn-secondary" onclick="archiveUsedCodes()">Zarchiwizuj użyte kody</button>
+              <button class="btn-secondary" onclick="setArchivedMode('hide')">Pokaż aktywne</button>
+              <button class="btn-secondary" onclick="setArchivedMode('only')">Pokaż zarchiwizowane</button>
             </div>
             <button class="btn-secondary" id="btn-refresh-codes">Odśwież</button>
             <button class="btn-secondary" id="btn-export-csv">Eksport CSV</button>
@@ -2247,3 +2245,4 @@ def admin_list_logs(
         raise HTTPException(status_code=500, detail="Błąd bazy danych")
     finally:
         db.close()
+
