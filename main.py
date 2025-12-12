@@ -97,16 +97,18 @@ def _extract_giftcard_positions(order: Dict[str, Any]) -> List[Dict[str, Any]]:
       "value": 100,
       "quantity": 2
     }
+
+    Fix: Idosell często trzyma nominał nie w productName, tylko w sizePanelName / sizeName.
     """
     result: List[Dict[str, Any]] = []
 
     order_details = order.get("orderDetails") or {}
 
-    # Idosell w Twoim payloadzie używa 'productsResults'
+    # Idosell zwykle używa 'productsResults'
     products = order_details.get("productsResults") or []
-    # gdyby kiedyś pojawiło się 'basket', też je obsłużymy:
+    # awaryjnie obsłuż inne możliwe klucze
     if not products:
-        products = order_details.get("basket") or []
+        products = order_details.get("basket") or order_details.get("products") or []
 
     for item in products:
         try:
@@ -117,25 +119,41 @@ def _extract_giftcard_positions(order: Dict[str, Any]) -> List[Dict[str, Any]]:
         if product_id != GIFT_PRODUCT_ID:
             continue
 
-        variant_name = str(item.get("productName") or "")
+        # nominał może być w różnych polach
+        variant_text_parts = [
+            item.get("productName"),
+            item.get("sizePanelName"),
+            item.get("sizeName"),
+            item.get("versionName"),
+        ]
+        variant_text = " ".join(str(p) for p in variant_text_parts if p).strip()
+
         matched_value: Optional[int] = None
         for label, val in GIFT_VARIANTS.items():
-            if label in variant_name:
+            if label in variant_text:
                 matched_value = val
                 break
+
+        # fallback: wyciągnij cyfry z sizePanelName/sizeName (np. "200 zł", "200zl", "200")
+        if matched_value is None:
+            raw = (item.get("sizePanelName") or item.get("sizeName") or "").strip()
+            digits = "".join(ch for ch in str(raw) if ch.isdigit())
+            if digits:
+                try:
+                    maybe = int(digits)
+                    if maybe in set(GIFT_VARIANTS.values()):
+                        matched_value = maybe
+                except ValueError:
+                    pass
 
         if matched_value is None:
             continue
 
-        quantity = int(
-            item.get("productQuantity")
-            or item.get("quantity")
-            or 1
-        )
-
+        quantity = int(item.get("productQuantity") or item.get("quantity") or 1)
         result.append({"value": matched_value, "quantity": quantity})
 
     return result
+
 
 
 def _is_order_paid(order: Dict[str, Any]) -> bool:
@@ -887,7 +905,61 @@ textarea:focus {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono";
       font-size: 12px;
     }
-  </style>
+  
+    /* --- Dark admin theme + consistent white inputs --- */
+    :root { color-scheme: dark; }
+    body { background: #000; color: #e5e7eb; }
+    .topbar { background: rgba(0,0,0,0.65); border-bottom: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(10px); }
+    .title { color: #f9fafb; }
+    .card {
+      background: #0b0b0d;
+      border: 1px solid rgba(255,255,255,0.10);
+      box-shadow: 0 18px 45px rgba(0,0,0,0.55);
+    }
+    .card-title { color: #f9fafb; }
+    .muted { color: rgba(229,231,235,0.75); }
+    label { color: rgba(229,231,235,0.85); }
+    input[type="text"], input[type="number"], input[type="email"], input[type="search"], textarea, select {
+      width: 100%;
+      background: #ffffff;
+      color: #111827;
+      border: 1px solid rgba(0,0,0,0.18);
+      border-radius: 12px;
+      padding: 12px 12px;
+      outline: none;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+    }
+    input::placeholder, textarea::placeholder { color: rgba(17,24,39,0.55); }
+    input:focus, textarea:focus, select:focus {
+      border-color: rgba(255,255,255,0.65);
+      box-shadow: 0 0 0 3px rgba(255,255,255,0.12);
+    }
+    /* Buttons */
+    .btn { box-shadow: 0 10px 26px rgba(0,0,0,0.35); }
+    .btn-secondary { background: rgba(255,255,255,0.10); color: #f9fafb; border: 1px solid rgba(255,255,255,0.14); }
+    .btn-secondary:hover { background: rgba(255,255,255,0.16); }
+    /* Switch (checkbox replacement) */
+    .switch-row { display:flex; align-items:center; gap:12px; user-select:none; }
+    .switch {
+      position: relative; display: inline-block; width: 46px; height: 26px; flex: 0 0 auto;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background: rgba(255,255,255,0.16);
+      border: 1px solid rgba(255,255,255,0.18);
+      transition: .2s; border-radius: 999px;
+    }
+    .slider:before {
+      position: absolute; content: "";
+      height: 20px; width: 20px; left: 3px; top: 2.5px;
+      background: #ffffff; transition: .2s; border-radius: 999px;
+    }
+    .switch input:checked + .slider { background: rgba(34,197,94,0.35); border-color: rgba(34,197,94,0.55); }
+    .switch input:checked + .slider:before { transform: translateX(20px); }
+    .switch-label { font-size: 13px; color: rgba(229,231,235,0.9); }
+
+\1
 </head>
 <body>
   <div class="app">
@@ -982,10 +1054,13 @@ textarea:focus {
 
           <div class="row" style="grid-template-columns: 1fr 1fr; gap: 12px; align-items: end;">
             <div>
-              <label style="display:flex; gap:8px; align-items:center; user-select:none;">
-                <input id="manual-attach-pdf" type="checkbox" />
-                <span>Załącz PDF przy wysyłce e-mail</span>
-              </label>
+              <div class="switch-row">
+                <span class="switch-label">Załącz PDF przy wysyłce e-mail</span>
+                <label class="switch">
+                  <input id="manual-attach-pdf" type="checkbox" />
+                  <span class="slider"></span>
+                </label>
+              </div>
             </div>
             <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
               <button class="btn" onclick="manualIssue()">Wygeneruj / pobierz</button>
