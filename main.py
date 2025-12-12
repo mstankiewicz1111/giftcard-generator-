@@ -960,6 +960,7 @@ textarea:focus {
     .switch-label { font-size: 13px; color: rgba(229,231,235,0.9); }
 </head>
 <body>
+ <!-- ADMIN BUILD: main_final_ui FIXED -->
   <div class="app">
     <header>
       <div class="logo">
@@ -2245,4 +2246,5 @@ def admin_list_logs(
         raise HTTPException(status_code=500, detail="Błąd bazy danych")
     finally:
         db.close()
+
 
