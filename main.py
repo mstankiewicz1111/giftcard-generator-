@@ -34,29 +34,6 @@ app = FastAPI(title="WASSYL Giftcard Webhook")
 # Inicjalizacja bazy (w tym nowej tabeli webhook_events)
 Base.metadata.create_all(bind=engine)
 
-# Dodatkowa tabela archiwum (soft-hide) dla kodów użytych / przypisanych
-
-def ensure_archive_table() -> None:
-    """Tworzy tabelę gift_codes_archive jeśli nie istnieje.
-
-    Tabela trzyma tylko referencje do gift_codes.id (soft-archive), aby nie usuwać danych.
-    """
-    try:
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
-                    CREATE TABLE IF NOT EXISTS gift_codes_archive (
-                        gift_code_id BIGINT PRIMARY KEY,
-                        archived_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-                    )
-                    """
-                )
-            )
-    except Exception as e:
-        logger.exception("Nie udało się utworzyć/zweryfikować tabeli gift_codes_archive: %s", e)
-
-
 # Globalny klient Idosell (może być None, jeśli brak konfiguracji)
 IDOSELL_DOMAIN = os.getenv("IDOSELL_DOMAIN")
 IDOSELL_API_KEY = os.getenv("IDOSELL_API_KEY")
@@ -97,18 +74,16 @@ def _extract_giftcard_positions(order: Dict[str, Any]) -> List[Dict[str, Any]]:
       "value": 100,
       "quantity": 2
     }
-
-    Fix: Idosell często trzyma nominał nie w productName, tylko w sizePanelName / sizeName.
     """
     result: List[Dict[str, Any]] = []
 
     order_details = order.get("orderDetails") or {}
 
-    # Idosell zwykle używa 'productsResults'
+    # Idosell w Twoim payloadzie używa 'productsResults'
     products = order_details.get("productsResults") or []
-    # awaryjnie obsłuż inne możliwe klucze
+    # gdyby kiedyś pojawiło się 'basket', też je obsłużymy:
     if not products:
-        products = order_details.get("basket") or order_details.get("products") or []
+        products = order_details.get("basket") or []
 
     for item in products:
         try:
@@ -119,41 +94,25 @@ def _extract_giftcard_positions(order: Dict[str, Any]) -> List[Dict[str, Any]]:
         if product_id != GIFT_PRODUCT_ID:
             continue
 
-        # nominał może być w różnych polach
-        variant_text_parts = [
-            item.get("productName"),
-            item.get("sizePanelName"),
-            item.get("sizeName"),
-            item.get("versionName"),
-        ]
-        variant_text = " ".join(str(p) for p in variant_text_parts if p).strip()
-
+        variant_name = str(item.get("productName") or "")
         matched_value: Optional[int] = None
         for label, val in GIFT_VARIANTS.items():
-            if label in variant_text:
+            if label in variant_name:
                 matched_value = val
                 break
-
-        # fallback: wyciągnij cyfry z sizePanelName/sizeName (np. "200 zł", "200zl", "200")
-        if matched_value is None:
-            raw = (item.get("sizePanelName") or item.get("sizeName") or "").strip()
-            digits = "".join(ch for ch in str(raw) if ch.isdigit())
-            if digits:
-                try:
-                    maybe = int(digits)
-                    if maybe in set(GIFT_VARIANTS.values()):
-                        matched_value = maybe
-                except ValueError:
-                    pass
 
         if matched_value is None:
             continue
 
-        quantity = int(item.get("productQuantity") or item.get("quantity") or 1)
+        quantity = int(
+            item.get("productQuantity")
+            or item.get("quantity")
+            or 1
+        )
+
         result.append({"value": matched_value, "quantity": quantity})
 
     return result
-
 
 
 def _is_order_paid(order: Dict[str, Any]) -> bool:
@@ -905,59 +864,6 @@ textarea:focus {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono";
       font-size: 12px;
     }
-  
-    /* --- Dark admin theme + consistent white inputs --- */
-    :root { color-scheme: dark; }
-    body { background: #000; color: #e5e7eb; }
-    .topbar { background: rgba(0,0,0,0.65); border-bottom: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(10px); }
-    .title { color: #f9fafb; }
-    .card {
-      background: #0b0b0d;
-      border: 1px solid rgba(255,255,255,0.10);
-      box-shadow: 0 18px 45px rgba(0,0,0,0.55);
-    }
-    .card-title { color: #f9fafb; }
-    .muted { color: rgba(229,231,235,0.75); }
-    label { color: rgba(229,231,235,0.85); }
-    input[type="text"], input[type="number"], input[type="email"], input[type="search"], textarea, select {
-      width: 100%;
-      background: #ffffff;
-      color: #111827;
-      border: 1px solid rgba(0,0,0,0.18);
-      border-radius: 12px;
-      padding: 12px 12px;
-      outline: none;
-      box-shadow: 0 6px 18px rgba(0,0,0,0.18);
-    }
-    input::placeholder, textarea::placeholder { color: rgba(17,24,39,0.55); }
-    input:focus, textarea:focus, select:focus {
-      border-color: rgba(255,255,255,0.65);
-      box-shadow: 0 0 0 3px rgba(255,255,255,0.12);
-    }
-    /* Buttons */
-    .btn { box-shadow: 0 10px 26px rgba(0,0,0,0.35); }
-    .btn-secondary { background: rgba(255,255,255,0.10); color: #f9fafb; border: 1px solid rgba(255,255,255,0.14); }
-    .btn-secondary:hover { background: rgba(255,255,255,0.16); }
-    /* Switch (checkbox replacement) */
-    .switch-row { display:flex; align-items:center; gap:12px; user-select:none; }
-    .switch {
-      position: relative; display: inline-block; width: 46px; height: 26px; flex: 0 0 auto;
-    }
-    .switch input { opacity: 0; width: 0; height: 0; }
-    .slider {
-      position: absolute; cursor: pointer; inset: 0;
-      background: rgba(255,255,255,0.16);
-      border: 1px solid rgba(255,255,255,0.18);
-      transition: .2s; border-radius: 999px;
-    }
-    .slider:before {
-      position: absolute; content: "";
-      height: 20px; width: 20px; left: 3px; top: 2.5px;
-      background: #ffffff; transition: .2s; border-radius: 999px;
-    }
-    .switch input:checked + .slider { background: rgba(34,197,94,0.35); border-color: rgba(34,197,94,0.55); }
-    .switch input:checked + .slider:before { transform: translateX(20px); }
-    .switch-label { font-size: 13px; color: rgba(229,231,235,0.9); }
   </style>
 </head>
 <body>
@@ -1053,13 +959,10 @@ textarea:focus {
 
           <div class="row" style="grid-template-columns: 1fr 1fr; gap: 12px; align-items: end;">
             <div>
-              <div class="switch-row">
-                <span class="switch-label">Załącz PDF przy wysyłce e-mail</span>
-                <label class="switch">
-                  <input id="manual-attach-pdf" type="checkbox" />
-                  <span class="slider"></span>
-                </label>
-              </div>
+              <label style="display:flex; gap:8px; align-items:center; user-select:none;">
+                <input id="manual-attach-pdf" type="checkbox" />
+                <span>Załącz PDF przy wysyłce e-mail</span>
+              </label>
             </div>
             <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
               <button class="btn" onclick="manualIssue()">Wygeneruj / pobierz</button>
@@ -1114,12 +1017,6 @@ textarea:focus {
                 <option value="used">Tylko użyte</option>
               </select>
             </label>
-
-            <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
-              <button class="btn-secondary" onclick="archiveUsedCodes()">Zarchiwizuj użyte kody</button>
-              <button class="btn-secondary" onclick="setArchivedMode('hide')">Pokaż aktywne</button>
-              <button class="btn-secondary" onclick="setArchivedMode('only')">Pokaż zarchiwizowane</button>
-            </div>
             <button class="btn-secondary" id="btn-refresh-codes">Odśwież</button>
             <button class="btn-secondary" id="btn-export-csv">Eksport CSV</button>
           </div>
@@ -1144,42 +1041,8 @@ textarea:focus {
             </table>
           </div>
           <p class="muted" style="margin-top:8px; font-size:12px;">
-            Wyświetlane są najnowsze kody, domyślnie maksymalnie 100 rekordów. <span id="codes-note">Tryb: aktywne</span>
+            Wyświetlane są najnowsze kody, domyślnie maksymalnie 100 rekordów.
           </p>
-        </div>
-      </section>
-
-
-      <!-- Diagnostyka zamówienia -->
-      <section class="card" style="margin-top: 16px;">
-        <div class="card-header">
-          <div>
-            <div class="card-title">
-              Diagnostyka zamówienia
-              <span class="card-title-badge">tools</span>
-            </div>
-            <p class="card-description">
-              Szybko sprawdź, czy webhook doszedł, czy kod jest przypisany, oraz co system zrobił z zamówieniem.
-            </p>
-          </div>
-        </div>
-
-        <div class="row" style="grid-template-columns: 1fr auto; gap: 12px; align-items: end;">
-          <div>
-            <div class="section-label">Numer zamówienia (orderSerialNumber)</div>
-            <input id="diag-order-serial" type="text" placeholder="np. 1842586" />
-          </div>
-          <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
-            <button class="btn" onclick="diagnoseOrder()">Sprawdź</button>
-          </div>
-        </div>
-
-        <div style="margin-top: 12px;">
-          <div class="section-label">Wynik</div>
-          <pre id="diag-output" class="codebox" style="min-height: 120px; white-space: pre-wrap;">—</pre>
-          <div class="muted" style="margin-top: 8px; font-size: 12px;">
-            Podpowiedź: jeśli brak kodu i brak webhooka, użyj sekcji „Ręczne wygenerowanie karty”.
-          </div>
         </div>
       </section>
 
@@ -1225,9 +1088,6 @@ textarea:focus {
   <script>
     const textarea = document.getElementById("codes-input");
     const summary = document.getElementById("codes-summary");
-
-    let archivedMode = "hide"; // hide | only | include
-
 
     function updateSummary() {
       const text = textarea.value.trim();
@@ -1349,7 +1209,6 @@ textarea:focus {
       const params = new URLSearchParams();
       if (filterValue) params.set("value", filterValue);
       if (filterUsed) params.set("used", filterUsed);
-      if (archivedMode) params.set("archived", archivedMode);
 
       try {
         const res = await fetch("/admin/api/codes?" + params.toString());
@@ -1402,86 +1261,7 @@ textarea:focus {
       }
     }
 
-    
-    function setArchivedMode(mode) {
-      archivedMode = mode || "hide";
-      const out = document.getElementById("codes-note");
-      if (out) {
-        if (archivedMode === "only") out.textContent = "Tryb: zarchiwizowane";
-        else out.textContent = "Tryb: aktywne";
-      }
-      loadCodes();
-    }
-
-    async function archiveUsedCodes() {
-      if (!confirm("Zarchiwizować wszystkie użyte (przypisane do zamówień) kody?")) return;
-      try {
-        const res = await fetch("/admin/api/codes/archive-used", { method: "POST" });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || "Błąd archiwizacji");
-        alert("Zarchiwizowano: " + data.archived + " kodów.");
-        archivedMode = "hide";
-        loadCodes();
-      } catch (e) {
-        alert("Błąd: " + (e.message || e));
-      }
-    }
-
-    async function diagnoseOrder() {
-      const orderSerial = document.getElementById("diag-order-serial").value.trim();
-      const out = document.getElementById("diag-output");
-      if (!orderSerial) {
-        out.textContent = "Podaj numer zamówienia (orderSerialNumber).";
-        return;
-      }
-      out.textContent = "Ładowanie…";
-
-      try {
-        const res = await fetch("/admin/api/diagnose?orderSerialNumber=" + encodeURIComponent(orderSerial));
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || "Błąd diagnostyki");
-
-        // Ładny, czytelny output
-        const lines = [];
-        lines.push("Zamówienie: " + data.orderSerialNumber);
-        lines.push("");
-        lines.push("Kody w bazie (łącznie): " + data.giftCodes.total);
-        lines.push(" - aktywne: " + data.giftCodes.active);
-        lines.push(" - zarchiwizowane: " + data.giftCodes.archived);
-        if (data.giftCodes.items && data.giftCodes.items.length) {
-          lines.push("");
-          lines.push("Lista kodów:");
-          data.giftCodes.items.forEach((x) => {
-            lines.push(" - [" + (x.archived ? "arch" : "act") + "] " + x.code + " (" + x.value + " zł) id=" + x.id);
-          });
-        }
-        lines.push("");
-        lines.push("Webhook / logi:");
-        lines.push(" - zdarzeń: " + data.logs.count);
-        if (data.logs.latest) {
-          lines.push(" - ostatni wpis: [" + data.logs.latest.status + "] " + data.logs.latest.message + " (" + data.logs.latest.created_at + ")");
-        }
-        if (data.detectedGiftPositions && data.detectedGiftPositions.length) {
-          lines.push("");
-          lines.push("Wykryte pozycje kart (na bazie payloadu logu):");
-          data.detectedGiftPositions.forEach((p) => lines.push(" - " + p.value + " zł x" + p.quantity));
-        } else {
-          lines.push("");
-          lines.push("Wykryte pozycje kart (na bazie payloadu logu): brak / nie można odczytać payloadu.");
-        }
-        if (data.hints && data.hints.length) {
-          lines.push("");
-          lines.push("Podpowiedzi:");
-          data.hints.forEach((h) => lines.push(" - " + h));
-        }
-
-        out.textContent = lines.join("\n");
-      } catch (e) {
-        out.textContent = "Błąd: " + (e.message || e);
-      }
-    }
-
-async function loadLogs() {
+    async function loadLogs() {
       const tbody = document.getElementById("logs-tbody");
       tbody.innerHTML =
         '<tr><td colspan="5" class="muted" style="text-align:center; padding:20px;">Ładowanie logów...</td></tr>';
@@ -1540,7 +1320,6 @@ async function loadLogs() {
       const params = new URLSearchParams();
       if (filterValue) params.set("value", filterValue);
       if (filterUsed) params.set("used", filterUsed);
-      if (archivedMode) params.set("archived", archivedMode);
 
       const url = "/admin/api/codes/export" + (params.toString() ? "?" + params.toString() : "");
       window.open(url, "_blank");
@@ -1721,62 +1500,43 @@ def admin_stats():
 @app.get("/admin/api/codes")
 def admin_list_codes(
     value: Optional[int] = Query(None, description="Filtr po nominale (np. 100, 200)"),
-    used: Optional[str] = Query(None, description="Filtr statusu: 'used' lub 'unused'"),
-    archived: Optional[str] = Query(
-        "hide",
-        description="Archiwum: 'hide' (domyślnie ukryj), 'only' (tylko zarchiwizowane), 'include' (pokaż wszystko)",
+    used: Optional[str] = Query(
+        None, description="Filtr statusu: 'used' lub 'unused'"
     ),
     limit: int = Query(100, ge=1, le=500, description="Maksymalna liczba rekordów"),
 ):
     """
     Zwraca listę ostatnich kodów z możliwością filtrowania.
-    Domyślnie nie pokazuje kodów zarchiwizowanych.
     """
-    ensure_archive_table()
-
     db = SessionLocal()
     try:
         conditions = []
         params: Dict[str, Any] = {"limit": limit}
 
         if value is not None:
-            conditions.append("gc.value = :value")
+            conditions.append("value = :value")
             params["value"] = value
 
-        if used == "used":
-            conditions.append("gc.order_id IS NOT NULL")
-        elif used == "unused":
-            conditions.append("gc.order_id IS NULL")
-
-        archived = (archived or "hide").strip().lower()
-        if archived == "hide":
-            conditions.append("ga.gift_code_id IS NULL")
-        elif archived == "only":
-            conditions.append("ga.gift_code_id IS NOT NULL")
-        elif archived == "include":
-            pass
-        else:
-            raise HTTPException(status_code=400, detail="Nieprawidłowa wartość parametru archived")
+        if used is not None:
+            if used == "used":
+                conditions.append("order_id IS NOT NULL")
+            elif used == "unused":
+                conditions.append("order_id IS NULL")
 
         where_clause = ""
         if conditions:
             where_clause = "WHERE " + " AND ".join(conditions)
 
-        rows = db.execute(
-            text(
-                f"""
-                SELECT gc.id, gc.code, gc.value, gc.order_id,
-                       CASE WHEN ga.gift_code_id IS NULL THEN 0 ELSE 1 END AS archived
-                FROM gift_codes gc
-                LEFT JOIN gift_codes_archive ga
-                  ON ga.gift_code_id = gc.id
-                {where_clause}
-                ORDER BY gc.id DESC
-                LIMIT :limit
-                """
-            ),
-            params,
-        ).fetchall()
+        query = text(
+            f"""
+            SELECT id, code, value, order_id
+            FROM gift_codes
+            {where_clause}
+            ORDER BY id DESC
+            LIMIT :limit
+            """
+        )
+        rows = db.execute(query, params).fetchall()
 
         codes = [
             {
@@ -1785,7 +1545,6 @@ def admin_list_codes(
                 "value": row.value,
                 "used": row.order_id is not None,
                 "order_id": row.order_id,
-                "archived": bool(row.archived),
             }
             for row in rows
         ]
@@ -2126,41 +1885,28 @@ def admin_manual_send_email(payload: Dict[str, Any]):
 @app.get("/admin/api/codes/export")
 def admin_export_codes(
     value: Optional[int] = Query(None, description="Filtr po nominale (np. 100, 200)"),
-    used: Optional[str] = Query(None, description="Filtr statusu: 'used' lub 'unused'"),
-    archived: Optional[str] = Query(
-        "hide",
-        description="Archiwum: 'hide' (domyślnie ukryj), 'only' (tylko zarchiwizowane), 'include' (pokaż wszystko)",
+    used: Optional[str] = Query(
+        None, description="Filtr statusu: 'used' lub 'unused'"
     ),
 ):
     """
-    Eksport kodów do pliku CSV (id;code;value;order_id;archived).
+    Eksport kodów do pliku CSV (id;code;value;order_id).
     Respektuje te same filtry, co /admin/api/codes.
     """
-    ensure_archive_table()
-
     db = SessionLocal()
     try:
         conditions = []
         params: Dict[str, Any] = {}
 
         if value is not None:
-            conditions.append("gc.value = :value")
+            conditions.append("value = :value")
             params["value"] = value
 
-        if used == "used":
-            conditions.append("gc.order_id IS NOT NULL")
-        elif used == "unused":
-            conditions.append("gc.order_id IS NULL")
-
-        archived = (archived or "hide").strip().lower()
-        if archived == "hide":
-            conditions.append("ga.gift_code_id IS NULL")
-        elif archived == "only":
-            conditions.append("ga.gift_code_id IS NOT NULL")
-        elif archived == "include":
-            pass
-        else:
-            raise HTTPException(status_code=400, detail="Nieprawidłowa wartość parametru archived")
+        if used is not None:
+            if used == "used":
+                conditions.append("order_id IS NOT NULL")
+            elif used == "unused":
+                conditions.append("order_id IS NULL")
 
         where_clause = ""
         if conditions:
@@ -2168,30 +1914,28 @@ def admin_export_codes(
 
         query = text(
             f"""
-            SELECT gc.id, gc.code, gc.value, gc.order_id,
-                   CASE WHEN ga.gift_code_id IS NULL THEN 0 ELSE 1 END AS archived
-            FROM gift_codes gc
-            LEFT JOIN gift_codes_archive ga
-              ON ga.gift_code_id = gc.id
+            SELECT id, code, value, order_id
+            FROM gift_codes
             {where_clause}
-            ORDER BY gc.id ASC
+            ORDER BY id ASC
             """
         )
         rows = db.execute(query, params).fetchall()
 
         output = io.StringIO()
         writer = csv.writer(output, delimiter=";")
-        writer.writerow(["id", "code", "value", "order_id", "archived"])
+        writer.writerow(["id", "code", "value", "order_id"])
         for row in rows:
-            writer.writerow([row.id, row.code, row.value, row.order_id, int(row.archived)])
+            writer.writerow([row.id, row.code, row.value, row.order_id])
 
         csv_data = output.getvalue()
         return Response(
             content=csv_data,
-            media_type="text/csv; charset=utf-8",
-            headers={"Content-Disposition": "attachment; filename=gift_codes.csv"},
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": 'attachment; filename="gift_codes_export.csv"'
+            },
         )
-
     except SQLAlchemyError as e:
         logger.exception("Błąd podczas eksportu kodów: %s", e)
         raise HTTPException(status_code=500, detail="Błąd bazy danych")
