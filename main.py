@@ -905,61 +905,7 @@ textarea:focus {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono";
       font-size: 12px;
     }
-  
-    /* --- Dark admin theme + consistent white inputs --- */
-    :root { color-scheme: dark; }
-    body { background: #000; color: #e5e7eb; }
-    .topbar { background: rgba(0,0,0,0.65); border-bottom: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(10px); }
-    .title { color: #f9fafb; }
-    .card {
-      background: #0b0b0d;
-      border: 1px solid rgba(255,255,255,0.10);
-      box-shadow: 0 18px 45px rgba(0,0,0,0.55);
-    }
-    .card-title { color: #f9fafb; }
-    .muted { color: rgba(229,231,235,0.75); }
-    label { color: rgba(229,231,235,0.85); }
-    input[type="text"], input[type="number"], input[type="email"], input[type="search"], textarea, select {
-      width: 100%;
-      background: #ffffff;
-      color: #111827;
-      border: 1px solid rgba(0,0,0,0.18);
-      border-radius: 12px;
-      padding: 12px 12px;
-      outline: none;
-      box-shadow: 0 6px 18px rgba(0,0,0,0.18);
-    }
-    input::placeholder, textarea::placeholder { color: rgba(17,24,39,0.55); }
-    input:focus, textarea:focus, select:focus {
-      border-color: rgba(255,255,255,0.65);
-      box-shadow: 0 0 0 3px rgba(255,255,255,0.12);
-    }
-    /* Buttons */
-    .btn { box-shadow: 0 10px 26px rgba(0,0,0,0.35); }
-    .btn-secondary { background: rgba(255,255,255,0.10); color: #f9fafb; border: 1px solid rgba(255,255,255,0.14); }
-    .btn-secondary:hover { background: rgba(255,255,255,0.16); }
-    /* Switch (checkbox replacement) */
-    .switch-row { display:flex; align-items:center; gap:12px; user-select:none; }
-    .switch {
-      position: relative; display: inline-block; width: 46px; height: 26px; flex: 0 0 auto;
-    }
-    .switch input { opacity: 0; width: 0; height: 0; }
-    .slider {
-      position: absolute; cursor: pointer; inset: 0;
-      background: rgba(255,255,255,0.16);
-      border: 1px solid rgba(255,255,255,0.18);
-      transition: .2s; border-radius: 999px;
-    }
-    .slider:before {
-      position: absolute; content: "";
-      height: 20px; width: 20px; left: 3px; top: 2.5px;
-      background: #ffffff; transition: .2s; border-radius: 999px;
-    }
-    .switch input:checked + .slider { background: rgba(34,197,94,0.35); border-color: rgba(34,197,94,0.55); }
-    .switch input:checked + .slider:before { transform: translateX(20px); }
-    .switch-label { font-size: 13px; color: rgba(229,231,235,0.9); }
-
-\1
+  </style>
 </head>
 <body>
   <div class="app">
@@ -1054,13 +1000,10 @@ textarea:focus {
 
           <div class="row" style="grid-template-columns: 1fr 1fr; gap: 12px; align-items: end;">
             <div>
-              <div class="switch-row">
-                <span class="switch-label">Załącz PDF przy wysyłce e-mail</span>
-                <label class="switch">
-                  <input id="manual-attach-pdf" type="checkbox" />
-                  <span class="slider"></span>
-                </label>
-              </div>
+              <label style="display:flex; gap:8px; align-items:center; user-select:none;">
+                <input id="manual-attach-pdf" type="checkbox" />
+                <span>Załącz PDF przy wysyłce e-mail</span>
+              </label>
             </div>
             <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
               <button class="btn" onclick="manualIssue()">Wygeneruj / pobierz</button>
