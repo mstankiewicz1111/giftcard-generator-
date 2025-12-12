@@ -74,8 +74,6 @@ def _extract_giftcard_positions(order: Dict[str, Any]) -> List[Dict[str, Any]]:
       "value": 100,
       "quantity": 2
     }
-
-    Fix: Idosell często trzyma nominał nie w productName, tylko w sizePanelName.
     """
     result: List[Dict[str, Any]] = []
 
@@ -96,38 +94,22 @@ def _extract_giftcard_positions(order: Dict[str, Any]) -> List[Dict[str, Any]]:
         if product_id != GIFT_PRODUCT_ID:
             continue
 
-        # Idosell: nominał może być w różnych polach (np. sizePanelName = "200 zł")
-        variant_text_parts = [
-            item.get("productName"),
-            item.get("sizePanelName"),
-            item.get("sizeName"),
-            item.get("versionName"),
-        ]
-        variant_text = " ".join(str(p) for p in variant_text_parts if p).strip()
-
+        variant_name = str(item.get("productName") or "")
         matched_value: Optional[int] = None
         for label, val in GIFT_VARIANTS.items():
-            if label in variant_text:
+            if label in variant_name:
                 matched_value = val
                 break
-
-        # dodatkowy fallback: jeśli nie ma etykiety "200 zł", spróbuj wyciągnąć liczbę
-        # z sizePanelName / sizeName (np. "200 zł", "200zl", "200")
-        if matched_value is None:
-            raw = (item.get("sizePanelName") or item.get("sizeName") or "").strip()
-            digits = "".join(ch for ch in str(raw) if ch.isdigit())
-            if digits:
-                try:
-                    maybe = int(digits)
-                    if maybe in set(GIFT_VARIANTS.values()):
-                        matched_value = maybe
-                except ValueError:
-                    pass
 
         if matched_value is None:
             continue
 
-        quantity = int(item.get("productQuantity") or item.get("quantity") or 1)
+        quantity = int(
+            item.get("productQuantity")
+            or item.get("quantity")
+            or 1
+        )
+
         result.append({"value": matched_value, "quantity": quantity})
 
     return result
@@ -735,7 +717,22 @@ ADMIN_HTML = """
       font-size: 13px;
       resize: vertical;
     }
-    textarea:focus {
+    
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      background: #0b1225;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 10px;
+      color: #e5e7eb;
+      outline: none;
+      font-size: 14px;
+    }
+    input:focus {
+      border-color: rgba(56, 189, 248, 0.7);
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+    }
+textarea:focus {
       outline: none;
       border-color: #4f46e5;
       box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.45);
@@ -925,7 +922,60 @@ ADMIN_HTML = """
         </div>
       </section>
 
-      <!-- Prawa kolumna: statystyki, lista kodów, eksport -->
+      
+      <!-- Ręczne wygenerowanie karty -->
+      <section class="card" style="margin-top: 16px;">
+        <div class="card-header">
+          <div>
+            <div class="card-title">
+              Ręczne wygenerowanie karty
+              <span class="card-title-badge">manual</span>
+            </div>
+            <p class="card-description">
+              Przypisz (lub pobierz istniejący) numer karty do zamówienia. Opcjonalnie pobierz PDF i/lub wyślij e-mail od razu do klienta.
+            </p>
+          </div>
+        </div>
+
+        <div class="row" style="grid-template-columns: 1fr; gap: 12px;">
+          <div class="row" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div>
+              <div class="section-label">Wartość karty (PLN)</div>
+              <input id="manual-value" type="number" min="1" step="1" placeholder="np. 200" />
+            </div>
+            <div>
+              <div class="section-label">Numer zamówienia</div>
+              <input id="manual-order" type="text" placeholder="orderSerialNumber (np. 1842586)" />
+            </div>
+          </div>
+
+          <div>
+            <div class="section-label">Adres e-mail do wysyłki</div>
+            <input id="manual-email" type="email" placeholder="np. klient@domena.pl" />
+            <div class="muted" style="margin-top: 6px;">
+              Zabezpieczenie: jeśli ten numer zamówienia ma już przypisany kod, system zwróci istniejący (nie utworzy nowego).
+            </div>
+          </div>
+
+          <div class="row" style="grid-template-columns: 1fr 1fr; gap: 12px; align-items: end;">
+            <div>
+              <label style="display:flex; gap:8px; align-items:center; user-select:none;">
+                <input id="manual-attach-pdf" type="checkbox" />
+                <span>Załącz PDF przy wysyłce e-mail</span>
+              </label>
+            </div>
+            <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
+              <button class="btn" onclick="manualIssue()">Wygeneruj / pobierz</button>
+              <button class="btn btn-secondary" id="manual-download-btn" onclick="manualDownloadPdf()" disabled>Pobierz PDF</button>
+              <button class="btn btn-primary" id="manual-email-btn" onclick="manualSendEmail()" disabled>Wyślij wiadomość e-mail</button>
+            </div>
+          </div>
+
+          <div id="manual-result" class="muted" style="margin-top: 6px;"></div>
+        </div>
+      </section>
+
+<!-- Prawa kolumna: statystyki, lista kodów, eksport -->
       <section class="card">
         <div class="card-header">
           <div>
@@ -1284,7 +1334,112 @@ ADMIN_HTML = """
     loadStats();
     loadCodes();
     loadLogs();
-  </script>
+  
+    // -------------------------------
+    // Manual issue / PDF / email
+    // -------------------------------
+    let manualLast = null;
+
+    function setManualButtons(enabled) {
+      document.getElementById("manual-download-btn").disabled = !enabled;
+      document.getElementById("manual-email-btn").disabled = !enabled;
+    }
+
+    async function manualIssue() {
+      const value = parseInt(document.getElementById("manual-value").value, 10);
+      const orderSerialNumber = (document.getElementById("manual-order").value || "").trim();
+      const email = (document.getElementById("manual-email").value || "").trim();
+      const out = document.getElementById("manual-result");
+
+      manualLast = null;
+      setManualButtons(false);
+
+      if (!value || value <= 0) {
+        out.innerHTML = '<span class="pill warn">Brak danych</span> Podaj poprawną wartość karty.';
+        return;
+      }
+      if (!orderSerialNumber) {
+        out.innerHTML = '<span class="pill warn">Brak danych</span> Podaj numer zamówienia.';
+        return;
+      }
+      if (!email) {
+        out.innerHTML = '<span class="pill warn">Brak danych</span> Podaj adres e-mail.';
+        return;
+      }
+
+      out.innerHTML = '<span class="pill">Przetwarzanie</span> Sprawdzam i przypisuję kod...';
+
+      try {
+        const res = await fetch("/admin/api/manual/issue", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ value, orderSerialNumber, email })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || "Błąd API");
+        }
+
+        manualLast = data;
+        setManualButtons(true);
+
+        const reused = data.reused ? "TAK (z bazy)" : "NIE (nowy kod)";
+        const note = data.noteUpdated ? "Notatka w Idosell: zaktualizowana." : "";
+        out.innerHTML =
+          '<span class="pill ok">OK</span> ' +
+          'Kod: <strong>' + data.code + '</strong> (' + data.value + ' zł) • Zamówienie: <strong>' + data.orderSerialNumber + '</strong>' +
+          ' • Reuse: <strong>' + reused + '</strong>. ' + note;
+
+      } catch (e) {
+        out.innerHTML = '<span class="pill err">Błąd</span> ' + (e.message || e);
+      }
+    }
+
+    async function manualDownloadPdf() {
+      const out = document.getElementById("manual-result");
+      const orderSerialNumber = (document.getElementById("manual-order").value || "").trim();
+      if (!orderSerialNumber) return;
+
+      out.innerHTML = '<span class="pill">PDF</span> Generuję plik...';
+      const url = "/admin/api/manual/pdf?orderSerialNumber=" + encodeURIComponent(orderSerialNumber);
+      window.location.href = url;
+      // nie wiemy czy przeglądarka pokaże download/preview – status zostawiamy:
+      setTimeout(() => {
+        if (manualLast) {
+          out.innerHTML = '<span class="pill ok">OK</span> PDF wygenerowany dla zamówienia <strong>' + orderSerialNumber + '</strong>.';
+        }
+      }, 400);
+    }
+
+    async function manualSendEmail() {
+      const out = document.getElementById("manual-result");
+      const orderSerialNumber = (document.getElementById("manual-order").value || "").trim();
+      const email = (document.getElementById("manual-email").value || "").trim();
+      const attachPdf = document.getElementById("manual-attach-pdf").checked;
+
+      if (!orderSerialNumber || !email) return;
+
+      out.innerHTML = '<span class="pill">E-mail</span> Wysyłam wiadomość...';
+
+      try {
+        const res = await fetch("/admin/api/manual/send-email", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ orderSerialNumber, email, attachPdf })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || "Błąd wysyłki");
+        }
+
+        out.innerHTML = '<span class="pill ok">Wysłano</span> Na: <strong>' + data.sentTo + '</strong> • PDF: <strong>' + (data.attachPdf ? "tak" : "nie") + '</strong>.';
+
+      } catch (e) {
+        out.innerHTML = '<span class="pill err">Błąd</span> ' + (e.message || e);
+      }
+    }
+</script>
 </body>
 </html>
 """
@@ -1460,6 +1615,273 @@ def admin_add_codes(payload: Dict[str, Any]):
         db.close()
 
 
+
+# ------------------------------------------------------------------------------
+# ADMIN API – ręczne przypisanie / wysyłka kart
+# ------------------------------------------------------------------------------
+
+
+@app.post("/admin/api/manual/issue")
+def admin_manual_issue(payload: Dict[str, Any]):
+    """
+    Ręczne przypisanie (lub pobranie istniejącego) kodu karty do zamówienia.
+
+    Wymaga:
+      - value (int) – nominał
+      - orderSerialNumber (str/int) – numer zamówienia (orderSerialNumber)
+      - email (str) – adres e-mail do wysyłki (opcjonalnie do samego przypisania, ale UI go wymaga)
+
+    Zasada:
+      - jeśli orderSerialNumber ma już przypisany kod (jakikolwiek), zwracamy istniejący
+      - jeśli nie, przypisujemy pierwszy wolny kod z puli dla danego nominału
+      - jeśli przypisaliśmy NOWY kod i mamy skonfigurowany IdosellClient, aktualizujemy notatkę zamówienia
+    """
+    try:
+        value = int(payload.get("value"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Nieprawidłowa wartość nominału")
+
+    order_serial = payload.get("orderSerialNumber")
+    if order_serial is None or str(order_serial).strip() == "":
+        raise HTTPException(status_code=400, detail="Brak numeru zamówienia")
+
+    email = (payload.get("email") or "").strip()
+    order_serial_str = str(order_serial).strip()
+
+    db = SessionLocal()
+    try:
+        # 1) Jeśli dla tego numeru zamówienia już jest przypisany kod – zwracamy go (zabezpieczenie przed duplikacją)
+        existing = db.execute(
+            text(
+                """
+                SELECT id, code, value, order_id
+                FROM gift_codes
+                WHERE order_id = :order_id
+                ORDER BY id ASC
+                LIMIT 1
+                """
+            ),
+            {"order_id": order_serial_str},
+        ).mappings().first()
+
+        if existing:
+            return {
+                "status": "ok",
+                "reused": True,
+                "code": existing["code"],
+                "value": int(existing["value"]),
+                "orderSerialNumber": existing["order_id"],
+                "email": email,
+            }
+
+        # 2) Przypisanie nowego kodu z puli (używamy tej samej logiki co webhook)
+        code_obj = crud.assign_unused_gift_code(
+            db,
+            value=value,
+            order_id=order_serial_str,
+        )
+        if not code_obj:
+            raise HTTPException(status_code=409, detail=f"Brak dostępnych kodów dla nominału {value}")
+
+        db.commit()
+
+        assigned = {"code": code_obj.code, "value": int(code_obj.value)}
+        note_updated = False
+
+        # 3) Notatka w Idosell (po ręcznym przypisaniu)
+        if idosell_client:
+            note_text = f"Numer(y) karty podarunkowej: {assigned['code']} ({assigned['value']} zł)"
+            try:
+                idosell_client.update_order_note(order_serial_str, note_text)
+                note_updated = True
+            except IdosellApiError as e:
+                logger.error(
+                    "Błąd IdosellApiError przy aktualizacji notatki zamówienia %s: %s",
+                    order_serial_str,
+                    e,
+                )
+            except Exception as e:
+                logger.exception(
+                    "Nieoczekiwany błąd przy aktualizacji notatki zamówienia %s: %s",
+                    order_serial_str,
+                    e,
+                )
+
+        # 4) Log adminowy do webhook_logs (żeby było śladem)
+        try:
+            log_webhook_event(
+                status="admin_manual_issue",
+                message=f"Ręczne przypisanie kodu: {assigned['code']} ({assigned['value']} zł)",
+                payload={"value": value, "orderSerialNumber": order_serial_str, "email": email},
+                order_id=f"manual:{order_serial_str}",
+                order_serial=order_serial_str,
+            )
+        except Exception:
+            # log_webhook_event nie może zablokować panelu
+            pass
+
+        return {
+            "status": "ok",
+            "reused": False,
+            "code": assigned["code"],
+            "value": assigned["value"],
+            "orderSerialNumber": order_serial_str,
+            "email": email,
+            "noteUpdated": note_updated,
+        }
+
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.exception("Błąd ręcznego przypisania kodu: %s", e)
+        raise HTTPException(status_code=500, detail="Błąd serwera")
+    finally:
+        db.close()
+
+
+@app.get("/admin/api/manual/pdf")
+def admin_manual_pdf(orderSerialNumber: str = Query(..., description="Numer zamówienia (orderSerialNumber)")):
+    """
+    Pobiera PDF dla kodu(ów) przypisanych do danego zamówienia.
+    Jeśli jest >1 kod, zwraca ZIP z wieloma PDF-ami.
+    """
+    order_serial_str = str(orderSerialNumber).strip()
+    if not order_serial_str:
+        raise HTTPException(status_code=400, detail="Brak numeru zamówienia")
+
+    db = SessionLocal()
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT code, value
+                FROM gift_codes
+                WHERE order_id = :order_id
+                ORDER BY id ASC
+                """
+            ),
+            {"order_id": order_serial_str},
+        ).mappings().all()
+
+        if not rows:
+            raise HTTPException(status_code=404, detail="Brak przypisanych kodów dla tego zamówienia")
+
+        if len(rows) == 1:
+            code_val = rows[0]
+            pdf_bytes = generate_giftcard_pdf(code=str(code_val["code"]), value=int(code_val["value"]))
+            filename = f"giftcard-{order_serial_str}-{code_val['value']}.pdf"
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+
+        # wiele kodów => ZIP
+        zbuf = io.BytesIO()
+        with zipfile.ZipFile(zbuf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for i, cv in enumerate(rows, start=1):
+                pdf_bytes = generate_giftcard_pdf(code=str(cv["code"]), value=int(cv["value"]))
+                zf.writestr(f"giftcard-{order_serial_str}-{i}-{int(cv['value'])}.pdf", pdf_bytes)
+        zbuf.seek(0)
+        return Response(
+            content=zbuf.getvalue(),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="giftcards-{order_serial_str}.zip"'},
+        )
+
+    finally:
+        db.close()
+
+
+@app.post("/admin/api/manual/send-email")
+def admin_manual_send_email(payload: Dict[str, Any]):
+    """
+    Wysyła e-mail do klienta z kodem(ami) przypisanymi do zamówienia.
+    Opcjonalnie załącza PDF.
+    """
+    order_serial = payload.get("orderSerialNumber")
+    email = (payload.get("email") or "").strip()
+    attach_pdf = bool(payload.get("attachPdf"))
+
+    if not order_serial or str(order_serial).strip() == "":
+        raise HTTPException(status_code=400, detail="Brak numeru zamówienia")
+    if not email:
+        raise HTTPException(status_code=400, detail="Brak adresu e-mail")
+
+    order_serial_str = str(order_serial).strip()
+
+    db = SessionLocal()
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT code, value
+                FROM gift_codes
+                WHERE order_id = :order_id
+                ORDER BY id ASC
+                """
+            ),
+            {"order_id": order_serial_str},
+        ).mappings().all()
+
+        if not rows:
+            raise HTTPException(status_code=404, detail="Brak przypisanych kodów dla tego zamówienia")
+
+        codes = [{"code": str(r["code"]), "value": int(r["value"])} for r in rows]
+
+        if attach_pdf:
+            attachments = []
+            for c in codes:
+                pdf_bytes = generate_giftcard_pdf(code=c["code"], value=c["value"])
+                attachments.append((f"giftcard-{c['value']}.pdf", pdf_bytes))
+
+            body_text = (
+                "Dzień dobry,\n\n"
+                f"W załączniku przesyłamy kartę podarunkową przypisaną do zamówienia {order_serial_str}.\n"
+                "Kod(y):\n"
+                + "\n".join([f"- {c['code']} ({c['value']} zł)" for c in codes])
+                + "\n\nPozdrawiamy,\nWASSYL"
+            )
+
+            send_email(
+                to_email=email,
+                subject="WASSYL – Twoja karta podarunkowa",
+                body_text=body_text,
+                body_html=None,
+                attachments=attachments,
+            )
+        else:
+            # bez PDF – użyj produkcyjnego maila (szablon, formatowanie)
+            send_giftcard_email(
+                to_email=email,
+                codes=codes,
+                order_serial_number=order_serial_str,
+            )
+
+        try:
+            log_webhook_event(
+                status="admin_manual_email",
+                message=f"Ręczna wysyłka e-mail (attachPdf={attach_pdf}) do {email}",
+                payload={"orderSerialNumber": order_serial_str, "email": email, "attachPdf": attach_pdf, "codes": codes},
+                order_id=f"manual:{order_serial_str}",
+                order_serial=order_serial_str,
+            )
+        except Exception:
+            pass
+
+        return {"status": "ok", "sentTo": email, "attachPdf": attach_pdf, "codes": codes}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Błąd ręcznej wysyłki e-mail: %s", e)
+        raise HTTPException(status_code=500, detail="Błąd serwera podczas wysyłki e-mail")
+    finally:
+        db.close()
+
+
 @app.get("/admin/api/codes/export")
 def admin_export_codes(
     value: Optional[int] = Query(None, description="Filtr po nominale (np. 100, 200)"),
@@ -1568,4 +1990,3 @@ def admin_list_logs(
         raise HTTPException(status_code=500, detail="Błąd bazy danych")
     finally:
         db.close()
-
