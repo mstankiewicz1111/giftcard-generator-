@@ -855,7 +855,17 @@ textarea:focus {
       box-shadow: 0 16px 35px rgba(15, 23, 42, 0.6);
       transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
     }
-    .btn:hover {
+    
+    .btn-primary {
+      background: rgba(229,197,94,0.18);
+      border: 1px solid rgba(229,197,94,0.45);
+      color: rgba(255,255,255,0.95);
+    }
+    .btn-primary:hover {
+      background: rgba(229,197,94,0.26);
+      border-color: rgba(229,197,94,0.65);
+    }
+.btn:hover {
       transform: translateY(-1px);
       box-shadow: 0 18px 40px rgba(15, 23, 42, 0.7);
       background: #020617;
@@ -958,9 +968,9 @@ textarea:focus {
     .switch input:checked + .slider { background: rgba(34,197,94,0.35); border-color: rgba(34,197,94,0.55); }
     .switch input:checked + .slider:before { transform: translateX(20px); }
     .switch-label { font-size: 13px; color: rgba(229,231,235,0.9); }
+  </style>
 </head>
 <body>
- <!-- ADMIN BUILD: main_final_ui FIXED -->
   <div class="app">
     <header>
       <div class="logo">
@@ -2246,5 +2256,4 @@ def admin_list_logs(
         raise HTTPException(status_code=500, detail="Błąd bazy danych")
     finally:
         db.close()
-
 
