@@ -97,18 +97,16 @@ def _extract_giftcard_positions(order: Dict[str, Any]) -> List[Dict[str, Any]]:
       "value": 100,
       "quantity": 2
     }
-
-    Fix: Idosell często trzyma nominał nie w productName, tylko w sizePanelName / sizeName.
     """
     result: List[Dict[str, Any]] = []
 
     order_details = order.get("orderDetails") or {}
 
-    # Idosell zwykle używa 'productsResults'
+    # Idosell w Twoim payloadzie używa 'productsResults'
     products = order_details.get("productsResults") or []
-    # awaryjnie obsłuż inne możliwe klucze
+    # gdyby kiedyś pojawiło się 'basket', też je obsłużymy:
     if not products:
-        products = order_details.get("basket") or order_details.get("products") or []
+        products = order_details.get("basket") or []
 
     for item in products:
         try:
@@ -119,41 +117,25 @@ def _extract_giftcard_positions(order: Dict[str, Any]) -> List[Dict[str, Any]]:
         if product_id != GIFT_PRODUCT_ID:
             continue
 
-        # nominał może być w różnych polach
-        variant_text_parts = [
-            item.get("productName"),
-            item.get("sizePanelName"),
-            item.get("sizeName"),
-            item.get("versionName"),
-        ]
-        variant_text = " ".join(str(p) for p in variant_text_parts if p).strip()
-
+        variant_name = str(item.get("productName") or "")
         matched_value: Optional[int] = None
         for label, val in GIFT_VARIANTS.items():
-            if label in variant_text:
+            if label in variant_name:
                 matched_value = val
                 break
-
-        # fallback: wyciągnij cyfry z sizePanelName/sizeName (np. "200 zł", "200zl", "200")
-        if matched_value is None:
-            raw = (item.get("sizePanelName") or item.get("sizeName") or "").strip()
-            digits = "".join(ch for ch in str(raw) if ch.isdigit())
-            if digits:
-                try:
-                    maybe = int(digits)
-                    if maybe in set(GIFT_VARIANTS.values()):
-                        matched_value = maybe
-                except ValueError:
-                    pass
 
         if matched_value is None:
             continue
 
-        quantity = int(item.get("productQuantity") or item.get("quantity") or 1)
+        quantity = int(
+            item.get("productQuantity")
+            or item.get("quantity")
+            or 1
+        )
+
         result.append({"value": matched_value, "quantity": quantity})
 
     return result
-
 
 
 def _is_order_paid(order: Dict[str, Any]) -> bool:
