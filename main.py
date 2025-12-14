@@ -1323,100 +1323,96 @@ textarea:focus {
       }
     }
 
-    async function loadLogs() {
-      const tbody = document.getElementById("logs-tbody");
-      tbody.innerHTML =
-        '<tr><td colspan="5" class="muted" style="text-align:center; padding:20px;">Ładowanie logów...</td></tr>';
+      async function correctValue() {
+    const out = document.getElementById("correct-result");
+    const codesText = (document.getElementById("correct-codes-input").value || "").trim();
+    const newValue = parseInt(document.getElementById("correct-new-value").value || "0", 10);
 
-      try {
-        const res = await fetch("/admin/api/logs");
-        if (!res.ok) {
-          tbody.innerHTML =
-            '<tr><td colspan="5" class="muted" style="text-align:center; padding:20px;">Błąd przy pobieraniu logów.</td></tr>';
-          return;
-        }
-        const data = await res.json();
-        if (!data || data.length === 0) {
-          tbody.innerHTML =
-            '<tr><td colspan="5" class="muted" style="text-align:center; padding:20px;">Brak logów do wyświetlenia.</td></tr>';
-          return;
-        }
-
-        tbody.innerHTML = "";
-        data.forEach((row) => {
-          const tr = document.createElement("tr");
-
-          const tdDate = document.createElement("td");
-          tdDate.textContent = row.created_at || "—";
-          tr.appendChild(tdDate);
-
-          const tdStatus = document.createElement("td");
-          tdStatus.textContent = row.status;
-          tr.appendChild(tdStatus);
-
-          const tdOrderId = document.createElement("td");
-          tdOrderId.textContent = row.order_id || "—";
-          tr.appendChild(tdOrderId);
-
-          const tdSerial = document.createElement("td");
-          tdSerial.textContent = row.order_serial || "—";
-          tr.appendChild(tdSerial);
-
-          const tdMsg = document.createElement("td");
-          tdMsg.textContent = row.message || "";
-         
-
-async function correctValue() {
-  const out = document.getElementById("correct-result");
-  const codesText = (document.getElementById("correct-codes-input").value || "").trim();
-  const newValue = parseInt(document.getElementById("correct-new-value").value || "0", 10);
-
-  if (!codesText) {
-    out.innerHTML = '<span class="pill err">Błąd</span> Wklej listę kodów.';
-    return;
-  }
-  if (!newValue) {
-    out.innerHTML = '<span class="pill err">Błąd</span> Wybierz docelowy nominał.';
-    return;
-  }
-
-  out.innerHTML = '<span class="pill">Korekta</span> Przetwarzam…';
-
-  try {
-    const res = await fetch("/admin/api/codes/correct-value", {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({ newValue: newValue, codes: codesText })
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || "Błąd korekty");
+    if (!codesText) {
+      out.innerHTML = '<span class="pill err">Błąd</span> Wklej listę kodów.';
+      return;
+    }
+    if (!newValue) {
+      out.innerHTML = '<span class="pill err">Błąd</span> Wybierz docelowy nominał.';
+      return;
     }
 
-    out.innerHTML =
-      '<span class="pill ok">OK</span> Zmieniono: <strong>' + data.updated +
-      '</strong> • pominięto przypisane: <strong>' + data.skipped_assigned +
-      '</strong> • nie znaleziono: <strong>' + data.not_found + '</strong>.';
+    out.innerHTML = '<span class="pill">Korekta</span> Przetwarzam…';
 
-    // odśwież listę + statystyki
-    loadStats();
-    loadCodes();
+    try {
+      const res = await fetch("/admin/api/codes/correct-value", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newValue: newValue, codes: codesText })
+      });
 
-  } catch (e) {
-    out.innerHTML = '<span class="pill err">Błąd</span> ' + (e.message || e);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Błąd korekty");
+
+      out.innerHTML =
+        '<span class="pill ok">OK</span> Zmieniono: <strong>' + data.updated +
+        '</strong> • pominięto przypisane: <strong>' + data.skipped_assigned +
+        '</strong> • nie znaleziono: <strong>' + data.not_found + '</strong>.';
+
+      loadStats();
+      loadCodes();
+    } catch (e) {
+      out.innerHTML = '<span class="pill err">Błąd</span> ' + (e.message || e);
+    }
   }
-}
 
- tr.appendChild(tdMsg);
+  async function loadLogs() {
+    const tbody = document.getElementById("logs-tbody");
+    tbody.innerHTML =
+      '<tr><td colspan="5" class="muted" style="text-align:center; padding:20px;">Ładowanie logów...</td></tr>';
 
-          tbody.appendChild(tr);
-        });
-      } catch (e) {
-        console.error(e);
+    try {
+      const res = await fetch("/admin/api/logs");
+      if (!res.ok) {
         tbody.innerHTML =
           '<tr><td colspan="5" class="muted" style="text-align:center; padding:20px;">Błąd przy pobieraniu logów.</td></tr>';
+        return;
       }
+
+      const data = await res.json();
+      if (!data || data.length === 0) {
+        tbody.innerHTML =
+          '<tr><td colspan="5" class="muted" style="text-align:center; padding:20px;">Brak logów do wyświetlenia.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = "";
+      data.forEach((row) => {
+        const tr = document.createElement("tr");
+
+        const tdDate = document.createElement("td");
+        tdDate.textContent = row.created_at || "—";
+        tr.appendChild(tdDate);
+
+        const tdStatus = document.createElement("td");
+        tdStatus.textContent = row.status || "";
+        tr.appendChild(tdStatus);
+
+        const tdOrderId = document.createElement("td");
+        tdOrderId.textContent = row.order_id || "—";
+        tr.appendChild(tdOrderId);
+
+        const tdSerial = document.createElement("td");
+        tdSerial.textContent = row.order_serial || "—";
+        tr.appendChild(tdSerial);
+
+        const tdMsg = document.createElement("td");
+        tdMsg.textContent = row.message || "";
+        tr.appendChild(tdMsg);
+
+        tbody.appendChild(tr);
+      });
+    } catch (e) {
+      console.error(e);
+      tbody.innerHTML =
+        '<tr><td colspan="5" class="muted" style="text-align:center; padding:20px;">Błąd przy pobieraniu logów.</td></tr>';
     }
+  }
 
     function exportCsv() {
       const filterValue = document.getElementById("filter-value").value;
@@ -2221,4 +2217,5 @@ def admin_list_logs(
         raise HTTPException(status_code=500, detail="Błąd bazy danych")
     finally:
         db.close()
+
 
