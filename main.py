@@ -1561,50 +1561,78 @@ def admin_add_codes(payload: Dict[str, Any]):
     """
     Dodaje nowe kody do puli dla danego nominału.
 
-    payload może wyglądać tak:
-      { "value": 100, "codes": "KOD1\nKOD2\nKOD3" }  # string
-      lub
-      { "value": 100, "codes": ["KOD1", "KOD2", "KOD3"] }  # lista
+    Zachowanie:
+    - duplikaty w DB są ignorowane (ON CONFLICT DO NOTHING)
+    - duplikaty w payloadzie są usuwane
+    - zwracamy ile realnie dodano + ile pominięto
     """
-    value = int(payload.get("value"))
+    try:
+        value = int(payload.get("value"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Nieprawidłowy nominał")
 
     codes_raw = payload.get("codes") or ""
 
     # Obsługa obu formatów: string i lista
     if isinstance(codes_raw, str):
-        codes = [c.strip() for c in codes_raw.splitlines() if c.strip()]
+        codes_in = [c.strip() for c in codes_raw.splitlines() if c.strip()]
     elif isinstance(codes_raw, list):
-        codes = [str(c).strip() for c in codes_raw if str(c).strip()]
+        codes_in = [str(c).strip() for c in codes_raw if str(c).strip()]
     else:
-        codes = []
+        codes_in = []
+
+    # Normalizacja + deduplikacja (zachowuje kolejność)
+    seen = set()
+    codes: List[str] = []
+    for c in codes_in:
+        c_norm = c.strip()
+        if not c_norm:
+            continue
+        # jeśli kody są case-insensitive u dostawcy, możesz odkomentować:
+        # c_norm = c_norm.upper()
+        if c_norm in seen:
+            continue
+        seen.add(c_norm)
+        codes.append(c_norm)
 
     if not codes:
         raise HTTPException(status_code=400, detail="Brak kodów do dodania")
 
     db = SessionLocal()
     try:
+        inserted = 0
+        skipped = 0
+
+        stmt = text(
+            """
+            INSERT INTO gift_codes (code, value, order_id)
+            VALUES (:code, :value, NULL)
+            ON CONFLICT (code) DO NOTHING
+            """
+        )
+
         for code in codes:
-            db.execute(
-                text(
-                    """
-                    INSERT INTO gift_codes (code, value, order_id)
-                    VALUES (:code, :value, NULL)
-                    """
-                ),
-                {"code": code, "value": value},
-            )
+            res = db.execute(stmt, {"code": code, "value": value})
+            # w Postgres rowcount będzie 1 jeśli wstawił, 0 jeśli konflikt i DO NOTHING
+            if res.rowcount == 1:
+                inserted += 1
+            else:
+                skipped += 1
 
         db.commit()
+
         logger.info(
-            "Dodano %s nowych kodów dla nominału %s",
-            len(codes),
-            value,
+            "Dodano %s kodów (pominięto duplikaty: %s) dla nominału %s",
+            inserted, skipped, value
         )
-        # 'inserted' dla zgodności z frontendem (alert używa data.inserted)
+
+        # zgodność z frontendem: alert używa data.inserted
         return {
             "status": "ok",
-            "added": len(codes),
-            "inserted": len(codes),
+            "inserted": inserted,
+            "added": inserted,
+            "skipped": skipped,
+            "requested": len(codes),
         }
 
     except SQLAlchemyError as e:
@@ -1990,3 +2018,4 @@ def admin_list_logs(
         raise HTTPException(status_code=500, detail="Błąd bazy danych")
     finally:
         db.close()
+
