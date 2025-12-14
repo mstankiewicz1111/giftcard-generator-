@@ -923,6 +923,50 @@ textarea:focus {
       </section>
 
       
+
+<!-- Korekta nominału -->
+<section class="card" style="margin-top: 16px;">
+  <div class="card-header">
+    <div>
+      <div class="card-title">
+        Korekta nominału kodów
+        <span class="card-title-badge">tools</span>
+      </div>
+      <p class="card-description">
+        Wklej kody (1 wiersz = 1 kod) i ustaw docelowy nominał. System zmieni tylko kody <strong>nieprzypisane</strong> (order_id = NULL).
+      </p>
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="field">
+      <label class="label" for="correct-new-value">Docelowy nominał</label>
+      <select id="correct-new-value" class="input">
+        <option value="100">100 zł</option>
+        <option value="200" selected>200 zł</option>
+        <option value="300">300 zł</option>
+        <option value="500">500 zł</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="field" style="margin-top: 10px;">
+    <label class="label" for="correct-codes-input">Lista kodów do korekty</label>
+    <textarea id="correct-codes-input" class="textarea" placeholder="KOD1&#10;KOD2&#10;KOD3"></textarea>
+    <div class="muted" style="margin-top:6px; font-size:12px;">
+      Tip: duplikaty wklejone w polu zostaną automatycznie pominięte.
+    </div>
+  </div>
+
+  <div class="btn-row" style="margin-top: 12px;">
+    <button class="btn" id="btn-correct-value">
+      <span>🛠️</span>
+      <span>Zmień nominał</span>
+    </button>
+    <div id="correct-result" class="muted" style="margin-left: 10px;"></div>
+  </div>
+</section>
+
       <!-- Ręczne wygenerowanie karty -->
       <section class="card" style="margin-top: 16px;">
         <div class="card-header">
@@ -1302,7 +1346,50 @@ textarea:focus {
 
           const tdMsg = document.createElement("td");
           tdMsg.textContent = row.message || "";
-          tr.appendChild(tdMsg);
+         
+
+async function correctValue() {
+  const out = document.getElementById("correct-result");
+  const codesText = (document.getElementById("correct-codes-input").value || "").trim();
+  const newValue = parseInt(document.getElementById("correct-new-value").value || "0", 10);
+
+  if (!codesText) {
+    out.innerHTML = '<span class="pill err">Błąd</span> Wklej listę kodów.';
+    return;
+  }
+  if (!newValue) {
+    out.innerHTML = '<span class="pill err">Błąd</span> Wybierz docelowy nominał.';
+    return;
+  }
+
+  out.innerHTML = '<span class="pill">Korekta</span> Przetwarzam…';
+
+  try {
+    const res = await fetch("/admin/api/codes/correct-value", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ newValue: newValue, codes: codesText })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || "Błąd korekty");
+    }
+
+    out.innerHTML =
+      '<span class="pill ok">OK</span> Zmieniono: <strong>' + data.updated +
+      '</strong> • pominięto przypisane: <strong>' + data.skipped_assigned +
+      '</strong> • nie znaleziono: <strong>' + data.not_found + '</strong>.';
+
+    // odśwież listę + statystyki
+    loadStats();
+    loadCodes();
+
+  } catch (e) {
+    out.innerHTML = '<span class="pill err">Błąd</span> ' + (e.message || e);
+  }
+}
+
+ tr.appendChild(tdMsg);
 
           tbody.appendChild(tr);
         });
@@ -1326,6 +1413,7 @@ textarea:focus {
     }
 
     document.getElementById("btn-save-codes").addEventListener("click", saveCodes);
+    document.getElementById("btn-correct-value").addEventListener("click", correctValue);
     document.getElementById("btn-refresh-codes").addEventListener("click", loadCodes);
     document.getElementById("btn-export-csv").addEventListener("click", exportCsv);
     document.getElementById("btn-refresh-logs").addEventListener("click", loadLogs);
@@ -1561,10 +1649,17 @@ def admin_add_codes(payload: Dict[str, Any]):
     """
     Dodaje nowe kody do puli dla danego nominału.
 
+    payload może wyglądać tak:
+      { "value": 100, "codes": "KOD1
+KOD2
+KOD3" }  # string
+      lub
+      { "value": 100, "codes": ["KOD1", "KOD2", "KOD3"] }  # lista
+
     Zachowanie:
-    - duplikaty w DB są ignorowane (ON CONFLICT DO NOTHING)
-    - duplikaty w payloadzie są usuwane
-    - zwracamy ile realnie dodano + ile pominięto
+      - duplikaty kodów w DB są pomijane (ON CONFLICT DO NOTHING)
+      - duplikaty w payloadzie są usuwane
+      - zwracamy ile realnie dodano i ile pominięto
     """
     try:
         value = int(payload.get("value"))
@@ -1581,19 +1676,17 @@ def admin_add_codes(payload: Dict[str, Any]):
     else:
         codes_in = []
 
-    # Normalizacja + deduplikacja (zachowuje kolejność)
+    # deduplikacja z zachowaniem kolejności
     seen = set()
     codes: List[str] = []
     for c in codes_in:
-        c_norm = c.strip()
-        if not c_norm:
+        c = c.strip()
+        if not c:
             continue
-        # jeśli kody są case-insensitive u dostawcy, możesz odkomentować:
-        # c_norm = c_norm.upper()
-        if c_norm in seen:
+        if c in seen:
             continue
-        seen.add(c_norm)
-        codes.append(c_norm)
+        seen.add(c)
+        codes.append(c)
 
     if not codes:
         raise HTTPException(status_code=400, detail="Brak kodów do dodania")
@@ -1613,24 +1706,18 @@ def admin_add_codes(payload: Dict[str, Any]):
 
         for code in codes:
             res = db.execute(stmt, {"code": code, "value": value})
-            # w Postgres rowcount będzie 1 jeśli wstawił, 0 jeśli konflikt i DO NOTHING
             if res.rowcount == 1:
                 inserted += 1
             else:
                 skipped += 1
 
         db.commit()
+        logger.info("Dodano %s nowych kodów dla nominału %s (pominięto duplikaty: %s)", inserted, value, skipped)
 
-        logger.info(
-            "Dodano %s kodów (pominięto duplikaty: %s) dla nominału %s",
-            inserted, skipped, value
-        )
-
-        # zgodność z frontendem: alert używa data.inserted
         return {
             "status": "ok",
-            "inserted": inserted,
             "added": inserted,
+            "inserted": inserted,  # dla zgodności z frontendem
             "skipped": skipped,
             "requested": len(codes),
         }
@@ -1638,6 +1725,104 @@ def admin_add_codes(payload: Dict[str, Any]):
     except SQLAlchemyError as e:
         db.rollback()
         logger.exception("Błąd podczas dodawania nowych kodów: %s", e)
+        raise HTTPException(status_code=500, detail="Błąd bazy danych")
+    finally:
+        db.close()
+
+
+@app.post("/admin/api/codes/correct-value")
+def admin_correct_codes_value(payload: Dict[str, Any]):
+    """
+    Korekta nominału dla wskazanych kodów.
+
+    Wymaga:
+      - newValue (int) – docelowy nominał
+      - codes (string z kodami 1/linia lub lista)
+
+    Zasady bezpieczeństwa:
+      - modyfikujemy WYŁĄCZNIE kody nieprzypisane (order_id IS NULL)
+      - kody przypisane są pomijane i raportowane w odpowiedzi
+    """
+    try:
+        new_value = int(payload.get("newValue"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Nieprawidłowy docelowy nominał")
+
+    codes_raw = payload.get("codes") or ""
+
+    if isinstance(codes_raw, str):
+        codes_in = [c.strip() for c in codes_raw.splitlines() if c.strip()]
+    elif isinstance(codes_raw, list):
+        codes_in = [str(c).strip() for c in codes_raw if str(c).strip()]
+    else:
+        codes_in = []
+
+    # deduplikacja z zachowaniem kolejności
+    seen = set()
+    codes: List[str] = []
+    for c in codes_in:
+        c = c.strip()
+        if not c:
+            continue
+        if c in seen:
+            continue
+        seen.add(c)
+        codes.append(c)
+
+    if not codes:
+        raise HTTPException(status_code=400, detail="Brak kodów do korekty")
+
+    db = SessionLocal()
+    try:
+        # pobierz stan dla podanych kodów
+        # SQLAlchemy expanding param dla IN (...)
+        from sqlalchemy import bindparam
+
+        select_stmt = text(
+            """
+            SELECT code, value, order_id
+            FROM gift_codes
+            WHERE code IN :codes
+            """
+        ).bindparams(bindparam("codes", expanding=True))
+
+        rows = db.execute(select_stmt, {"codes": codes}).fetchall()
+        found_by_code = {r.code: {"value": r.value, "order_id": r.order_id} for r in rows}
+
+        not_found = [c for c in codes if c not in found_by_code]
+        assigned = [c for c, info in found_by_code.items() if info["order_id"] is not None]
+
+        eligible = [c for c, info in found_by_code.items() if info["order_id"] is None]
+        if eligible:
+            update_stmt = text(
+                """
+                UPDATE gift_codes
+                SET value = :new_value
+                WHERE order_id IS NULL
+                  AND code IN :codes
+                """
+            ).bindparams(bindparam("codes", expanding=True))
+
+            res = db.execute(update_stmt, {"new_value": new_value, "codes": eligible})
+            updated = int(res.rowcount or 0)
+        else:
+            updated = 0
+
+        db.commit()
+
+        return {
+            "status": "ok",
+            "requested": len(codes),
+            "updated": updated,
+            "skipped_assigned": len(assigned),
+            "not_found": len(not_found),
+            "assigned_codes": assigned[:50],  # ograniczamy payload
+            "not_found_codes": not_found[:50],
+        }
+
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.exception("Błąd podczas korekty nominału: %s", e)
         raise HTTPException(status_code=500, detail="Błąd bazy danych")
     finally:
         db.close()
@@ -2018,4 +2203,3 @@ def admin_list_logs(
         raise HTTPException(status_code=500, detail="Błąd bazy danych")
     finally:
         db.close()
-
