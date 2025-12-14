@@ -2,6 +2,7 @@ import logging
 import os
 import json
 import io
+import zipfile
 import csv
 from typing import List, Dict, Any, Optional
 
@@ -882,7 +883,32 @@ textarea:focus {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono";
       font-size: 12px;
     }
-  </style>
+  
+.btn-primary{
+  background: linear-gradient(135deg, #4f46e5, #2563eb);
+  color:#fff;
+  border:none;
+  box-shadow: 0 16px 35px rgba(37, 99, 235, 0.35);
+}
+.btn-primary:hover{ background:#1d4ed8; }
+
+.pill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:3px 10px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:600;
+  border:1px solid #e5e7eb;
+  background:#f9fafb;
+  color:#111827;
+}
+.pill.ok{ background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.35); color:#166534; }
+.pill.err{ background: rgba(220,38,38,0.10); border-color: rgba(220,38,38,0.35); color:#991b1b; }
+.pill.warn{ background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.35); color:#92400e; }
+
+</style>
 </head>
 <body>
   <div class="app">
