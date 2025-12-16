@@ -72,7 +72,7 @@ def generate_giftcard_pdf(code: str, value: int | float | str) -> bytes:
     value_y = height * 0.492
     value_x = width  * 0.660
 
-    code_y  = height * 0.400
+    code_y  = height * 0.395
     code_x  = width  * 0.340
 
     value_text = f"{numeric_value} zł"
@@ -85,8 +85,8 @@ def generate_giftcard_pdf(code: str, value: int | float | str) -> bytes:
     c.setFont(value_font, 18)
     c.drawString(value_x, value_y, value_text)
 
-    # Kod — font 16
-    c.setFont(code_font, 16)
+    # Kod — font 18
+    c.setFont(code_font, 18)
     c.drawString(code_x, code_y, code_text)
 
     c.save()
