@@ -69,10 +69,10 @@ def generate_giftcard_pdf(code: str, value: int | float | str) -> bytes:
     # --- POZYCJE TEKSTU (lewy dół to 0,0) ---
     # Możesz delikatnie dostroić te współrzędne pod swój szablon
 
-    value_y = height * 0.490
-    value_x = width  * 0.650
+    value_y = height * 0.492
+    value_x = width  * 0.660
 
-    code_y  = height * 0.390
+    code_y  = height * 0.400
     code_x  = width  * 0.340
 
     value_text = f"{numeric_value} zł"
