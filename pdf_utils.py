@@ -9,7 +9,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Szablon karty
-TEMPLATE_PATH = os.path.join(BASE_DIR, "WASSYL-GIFTCARD.pdf")
+TEMPLATE_PATH = os.path.join(BASE_DIR, "WASSYL-GIFTCARD2.pdf")
 
 # Własna czcionka z polskimi znakami
 FONT_PATH = os.path.join(BASE_DIR, "DejaVuSans.ttf")
@@ -47,7 +47,7 @@ def generate_giftcard_pdf(code: str, value: int | float | str) -> bytes:
     if not os.path.exists(TEMPLATE_PATH):
         raise FileNotFoundError(
             f"Brak pliku szablonu PDF: {TEMPLATE_PATH}. "
-            "Upewnij się, że WASSYL-GIFTCARD.pdf jest w katalogu aplikacji."
+            "Upewnij się, że WASSYL-GIFTCARD2.pdf jest w katalogu aplikacji."
         )
 
     # 2. Wczytanie szablonu
@@ -69,11 +69,11 @@ def generate_giftcard_pdf(code: str, value: int | float | str) -> bytes:
     # --- POZYCJE TEKSTU (lewy dół to 0,0) ---
     # Możesz delikatnie dostroić te współrzędne pod swój szablon
 
-    value_y = height * 0.255
-    value_x = width * 0.47
+    value_y = height * 0.5012177
+    value_x = width  * 0.6799183
 
-    code_y = height * 0.120
-    code_x = width * 0.55
+    code_y  = height * 0.4051040
+    code_x  = width  * 0.3524221
 
     value_text = f"{numeric_value} zł"
     code_text = str(code)
