@@ -81,12 +81,12 @@ def generate_giftcard_pdf(code: str, value: int | float | str) -> bytes:
     if value_font == "Helvetica":
         value_text = value_text.replace("ł", "l").replace("Ł", "L")
 
-    # Wartość — font 16
-    c.setFont(value_font, 16)
+    # Wartość — font 18
+    c.setFont(value_font, 18)
     c.drawString(value_x, value_y, value_text)
 
-    # Kod — font 11
-    c.setFont(code_font, 11)
+    # Kod — font 16
+    c.setFont(code_font, 16)
     c.drawString(code_x, code_y, code_text)
 
     c.save()
