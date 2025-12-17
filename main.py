@@ -431,31 +431,61 @@ async def idosell_order_webhook(request: Request):
         )
 
     # 5. Aktualizacja notatki zamówienia w Idosell (tylko gdy są nowe kody)
-    if assigned_codes and order_serial and idosell_client:
-        codes_text = ", ".join(
-            f"{c['code']} ({c['value']} zł)" for c in assigned_codes
-        )
-        note_text = f"Numer(y) karty podarunkowej: {codes_text}"
+if assigned_codes and order_serial and idosell_client:
+    order_serial_str = str(order_serial).strip()
 
-        try:
-            idosell_client.update_order_note(order_serial, note_text)
-        except IdosellApiError as e:
-            logger.error(
-                "Błąd IdosellApiError przy aktualizacji notatki zamówienia %s: %s",
-                order_serial,
-                e,
-            )
-        except Exception as e:
-            logger.exception(
-                "Nieoczekiwany błąd przy aktualizacji notatki zamówienia %s: %s",
-                order_serial,
-                e,
-            )
-    elif assigned_codes and not idosell_client:
-        logger.warning(
-            "Brak skonfigurowanego klienta Idosell – pomijam aktualizację notatki dla zamówienia %s.",
-            order_id,
+    codes_text = ", ".join(f"{c['code']} ({c['value']} zł)" for c in assigned_codes)
+    note_text = f"Numer(y) karty podarunkowej: {codes_text}"
+
+    logger.info(
+        "Idosell: próba aktualizacji notatki zamówienia serial=%s; note='%s'",
+        order_serial_str,
+        note_text,
+    )
+
+    try:
+        idosell_client.update_order_note(order_serial_str, note_text)
+        log_webhook_event(
+            status="idosell_note_updated",
+            message=f"Zaktualizowano notatkę: {note_text}",
+            payload={"note": note_text},
+            order_id=order_id,
+            order_serial=order_serial_str,
+            event_type="idosell_note",
         )
+    except IdosellApiError as e:
+        logger.error(
+            "Błąd IdosellApiError przy aktualizacji notatki zamówienia %s: %s",
+            order_serial_str,
+            e,
+        )
+        log_webhook_event(
+            status="idosell_note_error",
+            message=f"IdosellApiError: {e}",
+            payload={"note": note_text},
+            order_id=order_id,
+            order_serial=order_serial_str,
+            event_type="idosell_note",
+        )
+    except Exception as e:
+        logger.exception(
+            "Nieoczekiwany błąd przy aktualizacji notatki zamówienia %s: %s",
+            order_serial_str,
+            e,
+        )
+        log_webhook_event(
+            status="idosell_note_error",
+            message=f"Unexpected: {e}",
+            payload={"note": note_text},
+            order_id=order_id,
+            order_serial=order_serial_str,
+            event_type="idosell_note",
+        )
+elif assigned_codes and not idosell_client:
+    logger.warning(
+        "Brak skonfigurowanego klienta Idosell – pomijam aktualizację notatki dla zamówienia %s.",
+        order_id,
+    )
 
     # Log sukcesu webhooka
     log_webhook_event(
@@ -2243,5 +2273,6 @@ def admin_list_logs(
         raise HTTPException(status_code=500, detail="Błąd bazy danych")
     finally:
         db.close()
+
 
 
