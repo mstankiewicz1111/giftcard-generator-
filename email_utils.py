@@ -11,27 +11,33 @@ from pdf_utils import generate_giftcard_pdf
 logger = logging.getLogger("giftcard-webhook")
 
 # ------------------------------------------------------------------------------
-# Konfiguracja SendGrid
+# Konfiguracja Brevo (Sendinblue) – Transactional Email API v3
 # ------------------------------------------------------------------------------
 
-SENDGRID_API_KEY: Optional[str] = os.getenv("SENDGRID_API_KEY")
+BREVO_API_KEY: Optional[str] = (os.getenv("BREVO_API_KEY") or "").strip() or None
 
-# Wsparcie zarówno dla EMAIL_FROM, jak i SENDGRID_FROM_EMAIL
-SENDGRID_FROM_EMAIL: str = (
-    os.getenv("EMAIL_FROM")
-    or os.getenv("SENDGRID_FROM_EMAIL")
+# Wsparcie dla EMAIL_FROM (zalecane) oraz alternatyw (żeby łatwo migrować)
+BREVO_FROM_EMAIL: str = (
+    (os.getenv("EMAIL_FROM") or "").strip()
+    or (os.getenv("BREVO_FROM_EMAIL") or "").strip()
     or "vouchery@wassyl.pl"
 )
-SENDGRID_FROM_NAME: str = os.getenv("SENDGRID_FROM_NAME", "Wassyl")
 
-SENDGRID_API_URL = "https://api.sendgrid.com/v3/mail/send"
+BREVO_FROM_NAME: str = (os.getenv("BREVO_FROM_NAME") or "Wassyl").strip()
 
-# Log pomocniczy, żeby w logach startowych było widać, jaki FROM faktycznie używamy
-logger.info("SendGrid FROM email skonfigurowany jako: %r", SENDGRID_FROM_EMAIL)
+# Opcjonalnie: Reply-To (np. prawdziwy kontakt do obsługi klienta)
+# Jeśli nie ustawisz, będzie taki sam jak FROM.
+BREVO_REPLY_TO: str = (os.getenv("BREVO_REPLY_TO") or "").strip() or BREVO_FROM_EMAIL
+
+BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
+
+logger.info("Brevo FROM email skonfigurowany jako: %r", BREVO_FROM_EMAIL)
+logger.info("Brevo FROM name skonfigurowany jako: %r", BREVO_FROM_NAME)
+logger.info("Brevo REPLY-TO skonfigurowany jako: %r", BREVO_REPLY_TO)
 
 
 # ------------------------------------------------------------------------------
-# Niskopoziomowa funkcja do wysyłania maili przez SendGrid Web API v3
+# Niskopoziomowa funkcja do wysyłania maili przez Brevo API v3
 # ------------------------------------------------------------------------------
 
 
@@ -43,7 +49,7 @@ def send_email(
     attachments: Optional[List[Tuple[str, bytes]]] = None,
 ) -> None:
     """
-    Wysyła wiadomość e-mail przy użyciu SendGrid Web API v3.
+    Wysyła wiadomość e-mail przy użyciu Brevo Transactional Email API v3.
 
     :param to_email: adres odbiorcy
     :param subject: temat wiadomości
@@ -51,68 +57,56 @@ def send_email(
     :param body_html: treść w formacie text/html (opcjonalnie)
     :param attachments: lista załączników (nazwa_pliku, zawartość_bytes)
     """
-    if not SENDGRID_API_KEY:
-        logger.error("Brak SENDGRID_API_KEY – nie można wysłać e-maila.")
-        raise RuntimeError("SENDGRID_API_KEY is not configured")
+    if not BREVO_API_KEY:
+        logger.error("Brak BREVO_API_KEY – nie można wysłać e-maila.")
+        raise RuntimeError("BREVO_API_KEY is not configured")
 
     if body_html is None:
         body_html = f"<pre>{body_text}</pre>"
 
-    data: Dict[str, Any] = {
-        "personalizations": [
-            {
-                "to": [{"email": to_email}],
-                "subject": subject,
-            }
-        ],
-        "from": {
-            "email": SENDGRID_FROM_EMAIL,
-            "name": SENDGRID_FROM_NAME,
+    payload: Dict[str, Any] = {
+        "sender": {
+            "email": BREVO_FROM_EMAIL,
+            "name": BREVO_FROM_NAME,
         },
-        "content": [
-            {
-                "type": "text/plain",
-                "value": body_text,
-            },
-            {
-                "type": "text/html",
-                "value": body_html,
-            },
-        ],
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "textContent": body_text,
+        "htmlContent": body_html,
+        "replyTo": {"email": BREVO_REPLY_TO},
     }
 
+    # Załączniki w Brevo: tablica "attachment", elementy mają m.in.:
+    # - name: nazwa pliku
+    # - content: base64
+    # (alternatywnie można podać url, ale tu generujesz PDF w runtime)
     if attachments:
-        sg_attachments: List[Dict[str, Any]] = []
+        brevo_attachments: List[Dict[str, Any]] = []
         for filename, file_bytes in attachments:
             encoded = base64.b64encode(file_bytes).decode("ascii")
-            sg_attachments.append(
+            brevo_attachments.append(
                 {
+                    "name": filename,
                     "content": encoded,
-                    "type": "application/pdf",
-                    "filename": filename,
-                    "disposition": "attachment",
                 }
             )
-        data["attachments"] = sg_attachments
+        payload["attachment"] = brevo_attachments
 
     headers = {
-        "Authorization": f"Bearer {SENDGRID_API_KEY}",
-        "Content-Type": "application/json",
+        "accept": "application/json",
+        "api-key": BREVO_API_KEY,
+        "content-type": "application/json",
     }
 
-    logger.info("Wysyłanie e-maila do %s przez SendGrid...", to_email)
+    logger.info("Wysyłanie e-maila do %s przez Brevo...", to_email)
+    resp = requests.post(BREVO_API_URL, json=payload, headers=headers, timeout=15)
 
-    resp = requests.post(SENDGRID_API_URL, json=data, headers=headers, timeout=15)
+    # Brevo zwykle zwraca 201 Created dla poprawnej wysyłki
+    if resp.status_code not in (200, 201, 202):
+        logger.error("Błąd Brevo: %s – %s", resp.status_code, resp.text)
+        raise RuntimeError(f"Brevo send failed: HTTP {resp.status_code} – {resp.text}")
 
-    if resp.status_code >= 400:
-        logger.error(
-            "Błąd SendGrid: %s – %s",
-            resp.status_code,
-            resp.text,
-        )
-        resp.raise_for_status()
-
-    logger.info("E-mail do %s został pomyślnie wysłany.", to_email)
+    logger.info("E-mail do %s został pomyślnie wysłany (HTTP %s).", to_email, resp.status_code)
 
 
 # ------------------------------------------------------------------------------
@@ -123,10 +117,6 @@ def send_email(
 def _build_giftcard_html(order_serial_number: str) -> str:
     """
     Buduje HTML dla maila z kartą podarunkową.
-    Layout prosty, ale zgodny z wymaganiami:
-    - logotyp WASSYL
-    - treść po polsku
-    - numer zamówienia (orderSerialNumber)
     """
     return f"""
 <!DOCTYPE html>
@@ -201,10 +191,6 @@ def _build_giftcard_html(order_serial_number: str) -> str:
 
 
 def build_giftcard_html(order_serial_number: str) -> str:
-    """
-    Publiczny helper – ten HTML możesz wykorzystać również w debug/test-email,
-    żeby testowy mail wyglądał identycznie jak produkcyjny.
-    """
     return _build_giftcard_html(order_serial_number)
 
 
@@ -220,14 +206,7 @@ def send_giftcard_email(
 ) -> None:
     """
     Wysyła maila z kartami podarunkowymi.
-
-    - generuje PDF dla każdej karty na bazie szablonu WASSYL-GIFTCARD.pdf
-    - dołącza wszystkie PDF-y jako załączniki
-    - w treści maila umieszcza listę kart + numer zamówienia (orderSerialNumber)
-    - opóźnia wysyłkę o 3 minuty (żeby najpierw przyszły maile ze sklepu)
     """
-
-    # OPÓŹNIENIE WYSYŁKI – 3 minuty
     delay_seconds = 3 * 60
     logger.info(
         "Zaplanowano wysyłkę e-maila z kartą/kartami do %s za %s sekund.",
@@ -238,7 +217,6 @@ def send_giftcard_email(
 
     subject = f"Twoja karta podarunkowa – zamówienie {order_serial_number}"
 
-    # Tekst jako fallback (plain text)
     lines: List[str] = [
         "Cześć!",
         "",
@@ -254,10 +232,8 @@ def send_giftcard_email(
         code = str(c.get("code"))
         value = c.get("value")
 
-        # Linia do body_text
         lines.append(f"- {value} zł – kod: {code}")
 
-        # Generacja PDF dla każdej karty
         pdf_bytes = generate_giftcard_pdf(code=code, value=value)
         filename = f"WASSYL-GIFTCARD-{value}zl-{code}.pdf"
         attachments.append((filename, pdf_bytes))
