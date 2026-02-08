@@ -20,7 +20,7 @@ from database.models import Base
 from database.session import engine, SessionLocal
 from database import crud
 from pdf_utils import generate_giftcard_pdf, TEMPLATE_PATH
-from email_utils import send_giftcard_email, send_email, SENDGRID_API_KEY, SENDGRID_FROM_EMAIL
+from email_utils import send_giftcard_email, send_email
 from idosell_client import IdosellClient, IdosellApiError
 
 # ------------------------------------------------------------------------------
@@ -520,12 +520,12 @@ def health_check():
     """
     Sprawdzenie:
     - połączenia z DB
-    - konfiguracji SendGrid
+    - konfiguracji Brevo
     - obecności szablonu PDF
     - konfiguracji Idosell
     """
     db_ok = False
-    sendgrid_ok = False
+    brevo_ok = False
     pdf_ok = False
     idosell_ok = False
 
@@ -542,8 +542,8 @@ def health_check():
         except Exception:
             pass
 
-    # SendGrid – tylko sprawdzamy czy jest skonfigurowany klucz i nadawca
-    sendgrid_ok = bool(SENDGRID_API_KEY and SENDGRID_FROM_EMAIL)
+    # Brevo – tylko sprawdzamy czy jest skonfigurowany klucz i nadawca
+    brevo_ok = bool((os.getenv('BREVO_API_KEY') or '').strip() and (os.getenv('EMAIL_FROM') or os.getenv('BREVO_FROM_EMAIL') or '').strip())
 
     # PDF template
     pdf_ok = bool(TEMPLATE_PATH and os.path.exists(TEMPLATE_PATH))
@@ -551,12 +551,13 @@ def health_check():
     # Idosell
     idosell_ok = idosell_client is not None
 
-    status_code = 200 if db_ok and sendgrid_ok and pdf_ok else 503
+    status_code = 200 if db_ok and brevo_ok and pdf_ok else 503
 
     return JSONResponse(
         {
             "database": db_ok,
-            "sendgrid_configured": sendgrid_ok,
+            "brevo_configured": brevo_ok,
+            "sendgrid_configured": brevo_ok,  # compat: stare monitory mogą tego oczekiwać
             "pdf_template_found": pdf_ok,
             "idosell_configured": idosell_ok,
         },
