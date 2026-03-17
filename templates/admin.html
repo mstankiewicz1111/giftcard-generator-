@@ -7,200 +7,280 @@
   <link rel="stylesheet" href="/static/admin.css" />
 </head>
 <body>
-  <div class="app">
-    <header>
-      <div>
-        <div class="eyebrow">Panel administracyjny</div>
-        <h1>WASSYL – karty podarunkowe</h1>
-        <p class="lead">
-          Zarządzanie kodami, podgląd statystyk, logów webhooka i ręczne akcje.
-        </p>
+  <div class="admin-shell">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <img
+          src="https://wassyl.pl/data/gfx/mask/pol/logo_1_small.svg"
+          alt="WASSYL"
+        />
       </div>
-    </header>
 
-    <main class="layout">
-      <section class="card">
-        <div class="section-head">
-          <div>
-            <h2>Statystyki kodów</h2>
-            <p class="muted">Podsumowanie dostępnych i wykorzystanych kodów według nominału.</p>
+      <nav class="sidebar-nav">
+        <a href="#sekcja-stats">Statystyki</a>
+        <a href="#sekcja-codes">Dodawanie i korekta</a>
+        <a href="#sekcja-lista">Lista kodów</a>
+        <a href="#sekcja-manual">Obsługa zamówienia</a>
+        <a href="#sekcja-logs">Logi webhooka</a>
+      </nav>
+    </aside>
+
+    <div class="main-area">
+      <header class="topbar">
+        <div class="topbar-logo">
+          <img
+            src="https://wassyl.pl/data/gfx/mask/pol/logo_1_small.svg"
+            alt="WASSYL"
+          />
+        </div>
+        <div class="topbar-text">
+          <h1>Panel administracyjny kart podarunkowych</h1>
+          <p>Zarządzanie pulą kodów, korektą nominałów, wysyłką i logami systemu.</p>
+        </div>
+      </header>
+
+      <main class="content">
+        <section class="card" id="sekcja-stats">
+          <div class="section-head">
+            <div>
+              <h2>Statystyki kodów</h2>
+              <p class="muted">Podsumowanie dostępnych i wykorzystanych kodów według nominału.</p>
+            </div>
+            <button class="btn btn-secondary" id="btn-refresh-stats" type="button">Odśwież</button>
           </div>
-          <button class="btn-secondary" id="btn-refresh-stats" type="button">Odśwież</button>
-        </div>
-        <div id="stats-container" class="chips">
-          <span class="muted">Ładowanie statystyk...</span>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-head">
-          <div>
-            <h2>Dodawanie kodów</h2>
-            <p class="muted">Wklej jeden kod w jednej linii i zapisz do wybranego nominału.</p>
+          <div id="stats-container" class="stats-grid">
+            <div class="muted">Ładowanie statystyk...</div>
           </div>
-        </div>
+        </section>
 
-        <div class="form-grid">
-          <div>
-            <label for="nominal-select">Nominał</label>
-            <select id="nominal-select">
-              <option value="100">100 zł</option>
-              <option value="200">200 zł</option>
-              <option value="300">300 zł</option>
-              <option value="400">400 zł</option>
-              <option value="500">500 zł</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="field">
-          <label for="codes-input">Kody</label>
-          <textarea
-            id="codes-input"
-            rows="10"
-            placeholder="Wklej kody, każdy w osobnej linii"
-          ></textarea>
-          <div id="codes-summary" class="muted">Liczba kodów: <strong>0</strong></div>
-        </div>
-
-        <div class="actions">
-          <button class="btn-primary" id="btn-save-codes" type="button">Zapisz kody</button>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-head">
-          <div>
-            <h2>Lista kodów</h2>
-            <p class="muted">Ostatnie rekordy z możliwością filtrowania.</p>
-          </div>
-          <button class="btn-secondary" id="btn-refresh-codes" type="button">Odśwież</button>
-        </div>
-
-        <div class="filters">
-          <div>
-            <label for="filter-value">Nominał</label>
-            <select id="filter-value">
-              <option value="">Wszystkie</option>
-              <option value="100">100 zł</option>
-              <option value="200">200 zł</option>
-              <option value="300">300 zł</option>
-              <option value="400">400 zł</option>
-              <option value="500">500 zł</option>
-            </select>
+        <section class="card" id="sekcja-codes">
+          <div class="section-head">
+            <div>
+              <h2>Dodawanie i korekta kodów</h2>
+              <p class="muted">W jednym miejscu możesz dodawać nowe kody oraz zmieniać nominał nieprzypisanych kodów.</p>
+            </div>
           </div>
 
-          <div>
-            <label for="filter-used">Status</label>
-            <select id="filter-used">
-              <option value="">Wszystkie</option>
-              <option value="unused">Nieużyte</option>
-              <option value="used">Użyte</option>
-            </select>
+          <div class="two-col">
+            <div class="panel-subcard">
+              <h3>Dodawanie nowych kodów</h3>
+
+              <div class="field">
+                <label for="nominal-select">Nominał</label>
+                <select id="nominal-select">
+                  <option value="100">100 zł</option>
+                  <option value="200">200 zł</option>
+                  <option value="300">300 zł</option>
+                  <option value="400">400 zł</option>
+                  <option value="500">500 zł</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="codes-input">Kody</label>
+                <textarea
+                  id="codes-input"
+                  rows="12"
+                  placeholder="Wklej kody, każdy w osobnej linii"
+                ></textarea>
+                <div id="codes-summary" class="muted">Liczba kodów: <strong>0</strong></div>
+              </div>
+
+              <div class="actions">
+                <button class="btn btn-primary" id="btn-save-codes" type="button">Zapisz kody</button>
+              </div>
+            </div>
+
+            <div class="panel-subcard">
+              <h3>Korekta nominału kodów</h3>
+
+              <div class="field">
+                <label for="correct-new-value">Docelowy nominał</label>
+                <select id="correct-new-value">
+                  <option value="100">100 zł</option>
+                  <option value="200">200 zł</option>
+                  <option value="300">300 zł</option>
+                  <option value="400">400 zł</option>
+                  <option value="500">500 zł</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="correct-codes-input">Kody do korekty</label>
+                <textarea
+                  id="correct-codes-input"
+                  rows="12"
+                  placeholder="Wklej kody, których nominał chcesz zmienić"
+                ></textarea>
+                <div id="correct-codes-summary" class="muted">Liczba kodów: <strong>0</strong></div>
+              </div>
+
+              <div class="actions">
+                <button class="btn btn-secondary" id="btn-correct-value" type="button">Zmień nominał</button>
+              </div>
+
+              <div id="correct-result" class="result-box muted">Brak wykonanej akcji.</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" id="sekcja-lista">
+          <div class="section-head">
+            <div>
+              <h2>Lista kodów</h2>
+              <p class="muted">Domyślnie lista nie pokazuje kodów. Wybierz nominał, aby wyświetlić rekordy.</p>
+            </div>
+            <div class="head-actions">
+              <button class="btn btn-secondary" id="btn-refresh-codes" type="button">Odśwież</button>
+              <button class="btn btn-secondary" id="btn-export-csv" type="button">Eksport CSV</button>
+            </div>
           </div>
 
-          <div>
-            <label for="filter-limit">Limit</label>
-            <select id="filter-limit">
-              <option value="50">50</option>
-              <option value="100" selected>100</option>
-              <option value="200">200</option>
-              <option value="500">500</option>
-            </select>
+          <div class="filters">
+            <div class="field">
+              <label for="filter-value">Nominał</label>
+              <select id="filter-value">
+                <option value="">Wybierz nominał</option>
+                <option value="100">100 zł</option>
+                <option value="200">200 zł</option>
+                <option value="300">300 zł</option>
+                <option value="400">400 zł</option>
+                <option value="500">500 zł</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="filter-used">Status</label>
+              <select id="filter-used">
+                <option value="">Wszystkie</option>
+                <option value="unused">Nieużyte</option>
+                <option value="used">Użyte</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="filter-limit">Limit</label>
+              <select id="filter-limit">
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+              </select>
+            </div>
+
+            <div class="field filter-button">
+              <label>&nbsp;</label>
+              <button class="btn btn-primary" id="btn-apply-filters" type="button">Pokaż rekordy</button>
+            </div>
           </div>
 
-          <div class="filter-action">
-            <button class="btn-primary" id="btn-apply-filters" type="button">Filtruj</button>
-          </div>
-        </div>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Kod</th>
-                <th>Nominał</th>
-                <th>Status</th>
-                <th>Order ID</th>
-              </tr>
-            </thead>
-            <tbody id="codes-tbody">
-              <tr>
-                <td colspan="5" class="muted center padded">Ładowanie danych...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-head">
-          <div>
-            <h2>Akcje ręczne</h2>
-            <p class="muted">Podejrzenie zamówienia, podgląd PDF i ręczna wysyłka e-maila.</p>
-          </div>
-        </div>
-
-        <div class="manual-grid">
-          <div class="field">
-            <label for="manual-order">Numer seryjny zamówienia</label>
-            <input id="manual-order" type="text" placeholder="np. 1899107" />
+          <div id="codes-empty-state" class="empty-state">
+            Wybierz nominał, aby zobaczyć listę kodów.
           </div>
 
-          <div class="field">
-            <label for="manual-email">Adres e-mail</label>
-            <input id="manual-email" type="email" placeholder="klient@domena.pl" />
+          <div class="table-wrap hidden" id="codes-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Kod</th>
+                  <th>Nominał</th>
+                  <th>Status</th>
+                  <th>Order ID</th>
+                </tr>
+              </thead>
+              <tbody id="codes-tbody">
+                <tr>
+                  <td colspan="5" class="muted center padded">Brak danych.</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-        </div>
+        </section>
 
-        <div class="checkbox-row">
-          <label class="checkbox-label">
-            <input id="manual-attach-pdf" type="checkbox" checked />
-            <span>Dołącz PDF do wiadomości</span>
-          </label>
-        </div>
-
-        <div class="actions wrap">
-          <button class="btn-secondary" id="btn-manual-load" type="button">Pobierz dane</button>
-          <button class="btn-secondary" id="btn-manual-pdf" type="button">Generuj PDF</button>
-          <button class="btn-primary" id="btn-manual-email" type="button">Wyślij e-mail</button>
-        </div>
-
-        <div id="manual-result" class="result-box muted">
-          Brak wykonanej akcji.
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-head">
-          <div>
-            <h2>Logi webhooka</h2>
-            <p class="muted">Ostatnie zdarzenia zapisane w tabeli webhook_events.</p>
+        <section class="card" id="sekcja-manual">
+          <div class="section-head">
+            <div>
+              <h2>Obsługa zamówienia</h2>
+              <p class="muted">Podejrzenie przypisanych kart, ręczne przypisanie kodu, pobranie PDF i wysyłka e-mail.</p>
+            </div>
           </div>
-          <button class="btn-secondary" id="btn-refresh-logs" type="button">Odśwież</button>
-        </div>
 
-        <div class="table-wrap logs-wrap">
-          <table class="logs-table">
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Status</th>
-                <th>orderId</th>
-                <th>Serial</th>
-                <th>Komunikat</th>
-              </tr>
-            </thead>
-            <tbody id="logs-tbody">
-              <tr>
-                <td colspan="5" class="muted center padded">Ładowanie logów...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </main>
+          <div class="manual-grid">
+            <div class="field">
+              <label for="manual-order">Numer seryjny zamówienia</label>
+              <input id="manual-order" type="text" placeholder="np. 1899107" />
+            </div>
+
+            <div class="field">
+              <label for="manual-value">Nominał do ręcznego przypisania</label>
+              <select id="manual-value">
+                <option value="100">100 zł</option>
+                <option value="200">200 zł</option>
+                <option value="300">300 zł</option>
+                <option value="400">400 zł</option>
+                <option value="500">500 zł</option>
+              </select>
+            </div>
+
+            <div class="field manual-email-field">
+              <label for="manual-email">Adres e-mail</label>
+              <input id="manual-email" type="email" placeholder="klient@domena.pl" />
+            </div>
+          </div>
+
+          <div class="checkbox-row">
+            <label class="checkbox-label">
+              <input id="manual-attach-pdf" type="checkbox" checked />
+              <span>Dołącz PDF do wiadomości</span>
+            </label>
+          </div>
+
+          <div class="actions wrap">
+            <button class="btn btn-secondary" id="btn-manual-load" type="button">Podejrzyj zamówienie</button>
+            <button class="btn btn-primary" id="btn-manual-issue" type="button">Przypisz / pobierz kod</button>
+            <button class="btn btn-secondary" id="btn-manual-pdf" type="button">Pobierz PDF</button>
+            <button class="btn btn-primary" id="btn-manual-email" type="button">Wyślij e-mail</button>
+          </div>
+
+          <div id="manual-result" class="result-box muted">Brak wykonanej akcji.</div>
+
+          <div class="manual-preview hidden" id="manual-preview">
+            <h3>Przypisane karty</h3>
+            <div id="manual-preview-body"></div>
+          </div>
+        </section>
+
+        <section class="card" id="sekcja-logs">
+          <div class="section-head">
+            <div>
+              <h2>Logi webhooka</h2>
+              <p class="muted">Ostatnie zdarzenia zapisane w tabeli webhook_events.</p>
+            </div>
+            <button class="btn btn-secondary" id="btn-refresh-logs" type="button">Odśwież</button>
+          </div>
+
+          <div class="table-wrap logs-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Status</th>
+                  <th>orderId</th>
+                  <th>Serial</th>
+                  <th>Komunikat</th>
+                </tr>
+              </thead>
+              <tbody id="logs-tbody">
+                <tr>
+                  <td colspan="5" class="muted center padded">Ładowanie logów...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
   </div>
 
   <script src="/static/admin.js"></script>
