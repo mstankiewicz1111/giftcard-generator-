@@ -628,11 +628,11 @@ def debug_tables():
         db.close()
 
 @app.get("/admin", response_class=HTMLResponse)
-def admin_panel():
+def admin_panel(request: Request):
     """
-    Prosty panel administracyjny (HTML + JS) do zarządzania kodami i podglądu logów webhooka.
+    Panel administracyjny – renderowany z szablonu Jinja2.
     """
-    return HTMLResponse(content=ADMIN_HTML)
+    return templates.TemplateResponse("admin.html", {"request": request})
 
 
 # ------------------------------------------------------------------------------
