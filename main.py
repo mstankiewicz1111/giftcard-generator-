@@ -1047,6 +1047,49 @@ def admin_manual_issue(payload: Dict[str, Any]):
     finally:
         db.close()
 
+@app.get("/admin/api/manual/order")
+def admin_manual_order(
+    orderSerialNumber: str = Query(..., description="Numer zamówienia (orderSerialNumber)")
+):
+    """
+    Zwraca wszystkie kody przypisane do danego zamówienia.
+    Służy do podglądu zamówienia w panelu admina.
+    """
+    order_serial_str = str(orderSerialNumber).strip()
+    if not order_serial_str:
+        raise HTTPException(status_code=400, detail="Brak numeru zamówienia")
+
+    db = SessionLocal()
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT code, value
+                FROM gift_codes
+                WHERE order_id = :order_id
+                ORDER BY id ASC
+                """
+            ),
+            {"order_id": order_serial_str},
+        ).mappings().all()
+
+        if not rows:
+            raise HTTPException(status_code=404, detail="Brak przypisanych kart dla tego zamówienia")
+
+        return {
+            "status": "ok",
+            "orderSerialNumber": order_serial_str,
+            "email": "",
+            "codes": [
+                {
+                    "code": str(r["code"]),
+                    "value": int(r["value"]),
+                }
+                for r in rows
+            ],
+        }
+    finally:
+        db.close()
 
 @app.get("/admin/api/manual/pdf")
 def admin_manual_pdf(orderSerialNumber: str = Query(..., description="Numer zamówienia (orderSerialNumber)")):
