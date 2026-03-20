@@ -1,6 +1,5 @@
-# idosell_client.py
-
 import logging
+import time
 from typing import Any
 
 import requests
@@ -24,7 +23,6 @@ class IdosellClient:
         :param api_key: klucz API (X-API-KEY) z panelu Idosell
         :param timeout: timeout dla zapytań HTTP w sekundach
         """
-        # Pozwalamy podać domenę z protokołem albo bez.
         if domain.startswith("http://") or domain.startswith("https://"):
             domain = domain.split("://", 1)[1]
         self.base_url = f"https://{domain.strip('/')}/api/admin/v6/orders/orders"
@@ -54,28 +52,17 @@ class IdosellClient:
         """
         Ustawia notatkę do zamówienia (orderNote) dla danego zamówienia.
 
-        Zgodnie z działającym przykładem z Idosell, używamy:
-        - endpointu: /api/admin/v6/orders/orders
-        - pola: orderSerialNumber
-        - pola: orderNote
-        i składni:
+        Retry działa dla błędów transportowych / sieciowych, np.:
+        - Connection reset by peer
+        - timeout
+        - chwilowy problem z połączeniem
 
-        {
-          "params": {
-            "orders": [
-              {
-                "orderSerialNumber": 1836855,
-                "orderNote": "test"
-              }
-            ]
-          }
-        }
+        Nie retryujemy błędów logicznych API (HTTP 4xx/5xx zwrócone przez API
+        lub struktury errors w odpowiedzi JSON).
         """
-        # Spróbujmy zrzutować na int – zgodnie z przykładem API.
         try:
             serial_value: int | str = int(order_serial_number)
         except (TypeError, ValueError):
-            # Gdyby kiedyś numer był alfanumeryczny – wyślemy jako string.
             serial_value = str(order_serial_number)
 
         payload = {
@@ -89,51 +76,95 @@ class IdosellClient:
             }
         }
 
-        logger.info(
-            "Aktualizuję notatkę zamówienia w Idosell: "
-            "orderSerialNumber=%s, url=%s",
-            order_serial_number,
-            self.base_url,
-        )
+        # 1. próba od razu
+        # kolejne retry po: 2 s, 5 s, 15 s, 60 s
+        retry_delays = [2, 5, 15, 60]
+        max_attempts = 1 + len(retry_delays)
 
-        resp = self.session.put(self.base_url, json=payload, timeout=self.timeout)
+        last_exc: Exception | None = None
 
-        if resp.status_code >= 400:
-            # Błąd HTTP – logujemy pełną treść odpowiedzi, żeby łatwo debugować.
-            logger.error(
-                "Idosell API zwrócił błąd HTTP %s dla orderSerialNumber=%s: %s",
-                resp.status_code,
-                order_serial_number,
-                resp.text,
-            )
-            raise IdosellApiError(
-                f"HTTP {resp.status_code} podczas aktualizacji notatki: {resp.text}"
-            )
+        for attempt in range(1, max_attempts + 1):
+            try:
+                logger.info(
+                    "Aktualizuję notatkę zamówienia w Idosell: "
+                    "orderSerialNumber=%s, próba=%s/%s, url=%s",
+                    order_serial_number,
+                    attempt,
+                    max_attempts,
+                    self.base_url,
+                )
 
-        data = self._parse_json_safely(resp)
+                resp = self.session.put(
+                    self.base_url,
+                    json=payload,
+                    timeout=self.timeout,
+                )
 
-        # Jeżeli API zwraca strukturę z polami errors – spróbujmy ją wychwycić,
-        # ale nie zakładamy konkretnego kształtu (może być dict, lista itd.).
-        if isinstance(data, dict) and data.get("errors"):
-            logger.error(
-                "Idosell API zwrócił błąd logiczny (dict) dla orderSerialNumber=%s: %s",
-                order_serial_number,
-                data["errors"],
-            )
-            raise IdosellApiError(f"API error: {data['errors']}")
-
-        if isinstance(data, list):
-            for item in data:
-                if isinstance(item, dict) and item.get("errors"):
+                if resp.status_code >= 400:
                     logger.error(
-                        "Idosell API zwrócił błąd logiczny (list) dla "
-                        "orderSerialNumber=%s: %s",
+                        "Idosell API zwrócił błąd HTTP %s dla orderSerialNumber=%s: %s",
+                        resp.status_code,
                         order_serial_number,
-                        item["errors"],
+                        resp.text,
                     )
-                    raise IdosellApiError(f"API error: {item['errors']}")
+                    raise IdosellApiError(
+                        f"HTTP {resp.status_code} podczas aktualizacji notatki: {resp.text}"
+                    )
 
-        logger.info(
-            "Pomyślnie zaktualizowano notatkę zamówienia %s w Idosell.",
-            order_serial_number,
-        )
+                data = self._parse_json_safely(resp)
+
+                if isinstance(data, dict) and data.get("errors"):
+                    logger.error(
+                        "Idosell API zwrócił błąd logiczny (dict) dla orderSerialNumber=%s: %s",
+                        order_serial_number,
+                        data["errors"],
+                    )
+                    raise IdosellApiError(f"API error: {data['errors']}")
+
+                if isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict) and item.get("errors"):
+                            logger.error(
+                                "Idosell API zwrócił błąd logiczny (list) dla "
+                                "orderSerialNumber=%s: %s",
+                                order_serial_number,
+                                item["errors"],
+                            )
+                            raise IdosellApiError(f"API error: {item['errors']}")
+
+                logger.info(
+                    "Pomyślnie zaktualizowano notatkę zamówienia %s w Idosell.",
+                    order_serial_number,
+                )
+                return
+
+            except IdosellApiError:
+                raise
+
+            except (requests.ConnectionError, requests.Timeout, requests.RequestException) as e:
+                last_exc = e
+
+                if attempt >= max_attempts:
+                    logger.error(
+                        "Nie udało się zaktualizować notatki zamówienia %s po %s próbach. "
+                        "Ostatni błąd: %s",
+                        order_serial_number,
+                        attempt,
+                        e,
+                    )
+                    raise
+
+                delay = retry_delays[attempt - 1]
+                logger.warning(
+                    "Błąd połączenia przy aktualizacji notatki zamówienia %s "
+                    "(próba %s/%s): %s. Ponawiam za %s s.",
+                    order_serial_number,
+                    attempt,
+                    max_attempts,
+                    e,
+                    delay,
+                )
+                time.sleep(delay)
+
+        if last_exc:
+            raise last_exc
